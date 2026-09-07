@@ -6,6 +6,14 @@ export function cn(...inputs: ClassValue[]) {
 
 export function relativeTime(unixMs: number): string {
   const diff = Date.now() - unixMs;
+  // Future timestamps (calendar events) read as "in …", not "Just now".
+  if (diff < -60_000) {
+    const m = Math.round(-diff / 60_000);
+    if (m < 60) return `in ${m}m`;
+    const h = Math.round(m / 60);
+    if (h < 24) return `in ${h}h`;
+    return `in ${Math.round(h / 24)}d`;
+  }
   const min = Math.floor(diff / 60_000);
   if (min < 1) return "Just now";
   if (min < 60) return `${min}m ago`;

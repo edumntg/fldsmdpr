@@ -138,8 +138,15 @@ pub fn fetch(selected: &[String]) -> Result<Vec<Fetched>, String> {
             meta.insert("link".into(), u.clone());
         }
 
+        // Include a title fragment so two events starting at the same instant
+        // in the same calendar don't collapse into one notification.
+        let title_key: String = title
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .take(16)
+            .collect();
         out.push(Fetched {
-            id: format!("maccal:{}:{}", cal, start.timestamp()),
+            id: format!("maccal:{}:{}:{}", cal, start.timestamp(), title_key),
             source: "gcal",
             ntype: "event",
             title,

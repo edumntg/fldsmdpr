@@ -42,6 +42,28 @@ fn default_shell() -> String {
     }
 }
 
+/// GUI apps get a minimal PATH, so bare program names (e.g. "claude") must be
+/// resolved to a full path or the spawn fails in the packaged build.
+fn resolve_program(program: &str) -> String {
+    if program.contains('/') {
+        return program.to_string();
+    }
+    if program == "claude" {
+        if let Some(p) = crate::connectors::slack::claude_bin() {
+            return p.display().to_string();
+        }
+    }
+    if let Ok(out) = std::process::Command::new("which").arg(program).output() {
+        if out.status.success() {
+            let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !p.is_empty() {
+                return p;
+            }
+        }
+    }
+    program.to_string()
+}
+
 #[tauri::command]
 pub fn pty_spawn(
     app: AppHandle,
@@ -61,7 +83,7 @@ pub fn pty_spawn(
         })
         .map_err(|e| e.to_string())?;
 
-    let mut cmd = CommandBuilder::new(program.unwrap_or_else(default_shell));
+    let mut cmd = CommandBuilder::new(resolve_program(&program.unwrap_or_else(default_shell)));
     for a in &args {
         cmd.arg(a);
     }
@@ -75,7 +97,8 @@ pub fn pty_spawn(
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let id = next_id();
 
-    // Stream output to the frontend on a dedicated thread.
+    // Stream output to the frontend on a dedicated thread; on exit, reap the
+    // session (wait() the child so it doesn't linger as a zombie) and drop it.
     let app_out = app.clone();
     let id_out = id.clone();
     std::thread::spawn(move || {
@@ -93,6 +116,13 @@ pub fn pty_spawn(
                         },
                     );
                 }
+            }
+        }
+        {
+            use tauri::Manager;
+            let state = app_out.state::<PtyState>();
+            if let Some(mut s) = state.0.lock().ok().and_then(|mut m| m.remove(&id_out)) {
+                let _ = s.child.wait();
             }
         }
         let _ = app_out.emit("pty-exit", PtyExit { id: id_out.clone() });
@@ -140,6 +170,7 @@ pub fn pty_resize(state: State<PtyState>, id: String, rows: u16, cols: u16) -> R
 pub fn pty_kill(state: State<PtyState>, id: String) -> Result<(), String> {
     if let Some(mut s) = state.0.lock().unwrap().remove(&id) {
         let _ = s.child.kill();
+        let _ = s.child.wait(); // reap — otherwise it lingers as a zombie
     }
     Ok(())
 }

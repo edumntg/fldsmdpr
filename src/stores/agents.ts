@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { AppNotification } from "../lib/types";
-import { launchOrca } from "../lib/ipc";
+import { launchOrca, agentSessionUpsert } from "../lib/ipc";
 import { repoLocalPath } from "../lib/pty";
 import { useTerminal } from "./terminal";
 import { buildAgentPrompt, worktreeName } from "../features/agents/prompt";
@@ -8,13 +8,32 @@ import { buildAgentPrompt, worktreeName } from "../features/agents/prompt";
 export type AgentStatus = "starting" | "working" | "thinking" | "done" | "failed";
 
 export interface AgentRun {
+  id: string; // session id (persisted)
   notificationId: string;
   runner: "orca" | "claude";
   status: AgentStatus;
   label: string; // the action, e.g. "Review with agent"
+  title: string; // what it's working on
+  source: string; // where the work came from (github/linear/slack/…)
   detail?: string; // worktree name / last status / error
   startedAt: number;
   endedAt?: number;
+}
+
+/** Fire-and-forget write-through so the Agents view survives restarts. */
+function persist(run: AgentRun) {
+  void agentSessionUpsert({
+    id: run.id,
+    notification_id: run.notificationId,
+    mode: run.runner,
+    status: run.status,
+    title: run.title,
+    source: run.source,
+    label: run.label,
+    detail: run.detail ?? null,
+    started_at: run.startedAt,
+    ended_at: run.endedAt ?? null,
+  });
 }
 
 export const isActive = (s: AgentStatus) => s === "starting" || s === "working" || s === "thinking";
@@ -38,17 +57,14 @@ export const useAgents = create<AgentsState>((set, get) => ({
     set((s) => {
       const run = s.runs[id];
       if (!run) return s;
-      return {
-        runs: {
-          ...s.runs,
-          [id]: {
-            ...run,
-            status,
-            detail: detail ?? run.detail,
-            endedAt: status === "done" || status === "failed" ? Date.now() : run.endedAt,
-          },
-        },
+      const next: AgentRun = {
+        ...run,
+        status,
+        detail: detail ?? run.detail,
+        endedAt: status === "done" || status === "failed" ? Date.now() : run.endedAt,
       };
+      persist(next);
+      return { runs: { ...s.runs, [id]: next } };
     }),
 
   clear: (id) =>
@@ -60,12 +76,19 @@ export const useAgents = create<AgentsState>((set, get) => ({
 
   launch: async (n, label, runner, opts) => {
     const repo = opts?.repoName ?? n.meta?.repo;
-    set((s) => ({
-      runs: {
-        ...s.runs,
-        [n.id]: { notificationId: n.id, runner, status: "starting", label, startedAt: Date.now() },
-      },
-    }));
+    const startedAt = Date.now();
+    const run: AgentRun = {
+      id: `${n.id}:${startedAt}`,
+      notificationId: n.id,
+      runner,
+      status: "starting",
+      label,
+      title: n.title,
+      source: n.source,
+      startedAt,
+    };
+    persist(run);
+    set((s) => ({ runs: { ...s.runs, [n.id]: run } }));
 
     if (runner === "claude") {
       const cwd = opts?.cwd ?? (repo ? ((await repoLocalPath(repo)) ?? undefined) : undefined);
@@ -96,7 +119,10 @@ export const useAgents = create<AgentsState>((set, get) => ({
         comment: n.url,
         repoId: opts?.repoId,
       });
-      get().setStatus(n.id, "working", `Orca worktree · ${res.worktree}`);
+      // From this app's perspective the dispatch is complete — the agent now
+      // lives in Orca (we can't track its progress here), so don't leave a
+      // forever-spinner blocking relaunch.
+      get().setStatus(n.id, "done", `Launched in Orca · ${res.worktree}`);
     } catch (e) {
       get().setStatus(n.id, "failed", e instanceof Error ? e.message : String(e));
     }

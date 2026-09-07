@@ -6,6 +6,7 @@ import { SettingsView } from "./features/settings/SettingsView";
 import { CommandPalette } from "./features/palette/CommandPalette";
 import { Onboarding, useOnboarding } from "./features/onboarding/Onboarding";
 import { TerminalDrawer } from "./features/terminal/TerminalDrawer";
+import { AgentsView } from "./features/agents/AgentsView";
 import { useUi } from "./stores/ui";
 import { useTheme } from "./stores/theme";
 import { useSync } from "./stores/sync";
@@ -37,6 +38,8 @@ export default function App() {
         <Sidebar />
         {section === "settings" ? (
           <SettingsView />
+        ) : section === "agents" ? (
+          <AgentsView />
         ) : (
           <>
             <NotificationList />

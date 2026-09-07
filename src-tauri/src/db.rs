@@ -84,6 +84,13 @@ const MIGRATIONS: &[&str] = &[
         INSERT INTO notifications_fts(rowid, title, snippet) VALUES (new.rowid, new.title, new.snippet);
     END;
     ",
+    // v2 — agent session history metadata (title/source/label/detail)
+    "
+    ALTER TABLE agent_sessions ADD COLUMN title TEXT NOT NULL DEFAULT '';
+    ALTER TABLE agent_sessions ADD COLUMN source TEXT NOT NULL DEFAULT '';
+    ALTER TABLE agent_sessions ADD COLUMN label TEXT NOT NULL DEFAULT '';
+    ALTER TABLE agent_sessions ADD COLUMN detail TEXT;
+    ",
 ];
 
 pub fn open(path: &Path) -> Result<Connection, rusqlite::Error> {
@@ -97,8 +104,12 @@ pub fn open(path: &Path) -> Result<Connection, rusqlite::Error> {
 fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
     for (i, sql) in MIGRATIONS.iter().enumerate().skip(version as usize) {
-        conn.execute_batch(sql)?;
-        conn.pragma_update(None, "user_version", (i + 1) as i64)?;
+        // Each migration + its version bump commit atomically — a mid-batch
+        // failure must not leave a half-applied schema that re-runs next launch.
+        conn.execute_batch(&format!(
+            "BEGIN;\n{sql}\nPRAGMA user_version = {};\nCOMMIT;",
+            i + 1
+        ))?;
     }
     Ok(())
 }

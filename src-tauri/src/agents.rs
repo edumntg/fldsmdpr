@@ -144,6 +144,74 @@ pub fn orca_repos() -> Result<Vec<OrcaRepo>, String> {
         .collect())
 }
 
+// ---- agent session history (persisted so the Agents view survives restarts) ----
+
+#[derive(serde::Deserialize, Serialize)]
+pub struct AgentSessionRow {
+    pub id: String,
+    pub notification_id: Option<String>,
+    pub mode: String, // orca | claude
+    pub status: String,
+    pub title: String,
+    pub source: String,
+    pub label: String,
+    pub detail: Option<String>,
+    pub started_at: i64,
+    pub ended_at: Option<i64>,
+}
+
+#[tauri::command]
+pub fn agent_session_upsert(
+    db: tauri::State<crate::AppDb>,
+    s: AgentSessionRow,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO agent_sessions (id, notification_id, mode, status, title, source, label, detail, started_at, ended_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+         ON CONFLICT(id) DO UPDATE SET
+            status = excluded.status,
+            detail = excluded.detail,
+            ended_at = excluded.ended_at",
+        rusqlite::params![
+            s.id, s.notification_id, s.mode, s.status, s.title, s.source, s.label, s.detail,
+            s.started_at, s.ended_at,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn agent_sessions_list(db: tauri::State<crate::AppDb>) -> Result<Vec<AgentSessionRow>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, notification_id, mode, status, title, source, label, detail, started_at, ended_at
+             FROM agent_sessions ORDER BY started_at DESC LIMIT 100",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(AgentSessionRow {
+                id: r.get(0)?,
+                notification_id: r.get(1)?,
+                mode: r.get(2)?,
+                status: r.get(3)?,
+                title: r.get(4)?,
+                source: r.get(5)?,
+                label: r.get(6)?,
+                detail: r.get(7)?,
+                started_at: r.get(8)?,
+                ended_at: r.get(9)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(rows)
+}
+
 #[derive(Serialize)]
 pub struct LaunchResult {
     pub worktree: String,

@@ -20,10 +20,17 @@ export function TerminalDrawer() {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggle]);
 
-  if (!open) return null;
+  // Hidden with CSS, not unmounted: unmounting would kill every PTY session
+  // (including running Claude agents) and lose scrollback.
+  if (tabs.length === 0 && !open) return null;
 
   return (
-    <div className="animate-fade-in flex h-72 shrink-0 flex-col border-t border-line bg-surface-2">
+    <div
+      className={cn(
+        "animate-fade-in flex h-72 shrink-0 flex-col border-t border-line bg-surface-2",
+        !open && "hidden",
+      )}
+    >
       {/* tab bar */}
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-2">
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">

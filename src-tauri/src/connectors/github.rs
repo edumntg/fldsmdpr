@@ -24,18 +24,22 @@ const CATEGORIES: &[(&str, &str, f64)] = &[
     ("is:open assignee:@me archived:false", "assigned", 70.0),
 ];
 
-pub async fn fetch(token: &str) -> Result<Vec<Fetched>, String> {
+/// Returns the fetched items plus a `complete` flag: false when any category
+/// has more open items than one page returned — in that case the caller must
+/// NOT auto-resolve, or still-open items beyond the page get marked done.
+pub async fn fetch(token: &str) -> Result<(Vec<Fetched>, bool), String> {
     let client = reqwest::Client::builder()
         .user_agent("fldsmdpr/0.1")
         .build()
         .map_err(|e| e.to_string())?;
 
     let mut by_id: HashMap<i64, Fetched> = HashMap::new();
+    let mut complete = true;
 
     for (query, ntype, base_priority) in CATEGORIES {
         let res = client
             .get("https://api.github.com/search/issues")
-            .query(&[("q", *query), ("per_page", "50"), ("sort", "updated")])
+            .query(&[("q", *query), ("per_page", "100"), ("sort", "updated")])
             .bearer_auth(token)
             .header("X-GitHub-Api-Version", "2022-11-28")
             .header("Accept", "application/vnd.github+json")
@@ -56,6 +60,9 @@ pub async fn fetch(token: &str) -> Result<Vec<Fetched>, String> {
         let Some(items) = body["items"].as_array() else {
             continue;
         };
+        if body["total_count"].as_i64().unwrap_or(0) > items.len() as i64 {
+            complete = false;
+        }
 
         for item in items {
             let Some(gh_id) = item["id"].as_i64() else {
@@ -143,5 +150,5 @@ pub async fn fetch(token: &str) -> Result<Vec<Fetched>, String> {
         }
     }
 
-    Ok(by_id.into_values().collect())
+    Ok((by_id.into_values().collect(), complete))
 }

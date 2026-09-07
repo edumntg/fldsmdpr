@@ -16,6 +16,7 @@ import { useUi } from "../../stores/ui";
 import { useInbox, unreadCount } from "../../stores/inbox";
 import { useTerminal } from "../../stores/terminal";
 import { useSlackAi } from "../../stores/slackAi";
+import { useAgents, isActive } from "../../stores/agents";
 import { Loader2 } from "lucide-react";
 import { cn, isMac, modKey } from "../../lib/utils";
 import { Kbd } from "../ui/Kbd";
@@ -35,6 +36,7 @@ export function Sidebar() {
   const items = useInbox((s) => s.items);
   const toggleTerminal = useTerminal((s) => s.toggle);
   const slackAnalyzing = useSlackAi((s) => s.running);
+  const agentsWorking = useAgents((s) => Object.values(s.runs).some((r) => isActive(r.status)));
 
   return (
     <aside
@@ -94,7 +96,7 @@ export function Sidebar() {
             >
               <Icon size={16} strokeWidth={2} className="shrink-0" />
               {!sidebarCollapsed && <span className="flex-1 truncate text-left">{label}</span>}
-              {id === "slack" && slackAnalyzing && (
+              {((id === "slack" && slackAnalyzing) || (id === "agents" && agentsWorking)) && (
                 <Loader2
                   size={13}
                   className={cn("shrink-0 animate-spin", active ? "text-accent-fg" : "text-src-agent")}

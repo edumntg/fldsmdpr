@@ -195,12 +195,21 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
     let mut errors: Vec<String> = Vec::new();
     let mut fetched: Vec<crate::connectors::Fetched> = Vec::new();
 
-    // Slack/Calendar connectors land in Phases 2-3.
+    // Sources safe to auto-resolve this round. A source only qualifies when its
+    // fetch was BOTH successful and complete — resolving from a partial view
+    // permanently marks still-open items done. Slack never qualifies: its items
+    // are point-in-time messages that don't "close", and its two auth paths use
+    // different id schemes that would wipe each other.
+    let mut resolve_sources: Vec<&'static str> = Vec::new();
+
     if let Ok(Some(token)) = crate::secrets::get(&token_key("github")) {
         match crate::connectors::github::fetch(&token).await {
-            Ok(items) => {
+            Ok((items, complete)) => {
                 fetched.extend(items);
                 synced.push("github".into());
+                if complete {
+                    resolve_sources.push("github");
+                }
             }
             Err(e) => errors.push(format!("github: {e}")),
         }
@@ -210,6 +219,7 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
             Ok(items) => {
                 fetched.extend(items);
                 synced.push("linear".into());
+                resolve_sources.push("linear");
             }
             Err(e) => errors.push(format!("linear: {e}")),
         }
@@ -224,24 +234,32 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
                 .map(|c| (c.id, c.name))
                 .collect()
         };
-        match crate::connectors::slack::fetch(&auth, &channels).await {
-            Ok(items) => {
-                fetched.extend(items);
-                synced.push("slack".into());
+        if !channels.is_empty() {
+            match crate::connectors::slack::fetch(&auth, &channels).await {
+                Ok(items) => {
+                    fetched.extend(items);
+                    synced.push("slack".into());
+                }
+                Err(e) => errors.push(format!("slack: {e}")),
             }
-            Err(e) => errors.push(format!("slack: {e}")),
         }
     }
+
+    // Calendar has two backends sharing source "gcal" (secret ICS URL + local
+    // macOS Calendar); resolving is only safe when every enabled backend
+    // succeeded, otherwise one backend's transient failure clears the other's events.
+    let mut gcal_enabled = false;
+    let mut gcal_all_ok = true;
     if let Ok(Some(url)) = crate::secrets::get(&token_key("gcal")) {
+        gcal_enabled = true;
         match crate::connectors::gcal::fetch(&url).await {
-            Ok(items) => {
-                fetched.extend(items);
-                synced.push("gcal".into());
+            Ok(items) => fetched.extend(items),
+            Err(e) => {
+                gcal_all_ok = false;
+                errors.push(format!("gcal: {e}"));
             }
-            Err(e) => errors.push(format!("gcal: {e}")),
         }
     }
-    // Local macOS Calendar (reads a Google account synced via Internet Accounts).
     {
         let (enabled, cals) = {
             let conn = db.0.lock().map_err(|e| e.to_string())?;
@@ -251,15 +269,20 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
             )
         };
         if enabled {
+            gcal_enabled = true;
             match crate::connectors::maccal::fetch(&cals) {
-                Ok(items) => {
-                    fetched.extend(items);
-                    if !synced.contains(&"gcal".to_string()) {
-                        synced.push("gcal".into());
-                    }
+                Ok(items) => fetched.extend(items),
+                Err(e) => {
+                    gcal_all_ok = false;
+                    errors.push(format!("calendar: {e}"));
                 }
-                Err(e) => errors.push(format!("calendar: {e}")),
             }
+        }
+    }
+    if gcal_enabled {
+        synced.push("gcal".into());
+        if gcal_all_ok {
+            resolve_sources.push("gcal");
         }
     }
 
@@ -271,9 +294,7 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
     let new_count = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         let new_count = crate::inbox::upsert(&conn, &fetched)?;
-        // Auto-resolve items the provider no longer reports (merged/closed/completed),
-        // but only for providers whose fetch actually succeeded.
-        for p in &synced {
+        for p in &resolve_sources {
             let keep: std::collections::HashSet<String> = fetched
                 .iter()
                 .filter(|f| f.source == *p)

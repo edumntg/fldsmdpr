@@ -247,3 +247,36 @@ export async function setNotificationState(id: string, state: NotificationState)
   if (!inTauri) return;
   return invoke("set_notification_state", { id, state });
 }
+
+export async function snoozeNotification(id: string, until: number): Promise<void> {
+  if (!inTauri) return;
+  return invoke("snooze_notification", { id, until });
+}
+
+// ---- agent sessions (history) ----
+
+export interface AgentSession {
+  id: string;
+  notification_id: string | null;
+  mode: string; // orca | claude
+  status: string;
+  title: string;
+  source: string;
+  label: string;
+  detail: string | null;
+  started_at: number;
+  ended_at: number | null;
+}
+
+export async function agentSessionUpsert(s: AgentSession): Promise<void> {
+  if (!inTauri) return;
+  return invoke("agent_session_upsert", { s });
+}
+
+export async function agentSessionsList(): Promise<AgentSession[]> {
+  if (!inTauri)
+    return [
+      { id: "d1", notification_id: "n4", mode: "claude", status: "done", title: "PLA-341: Rate-limit retry storm", source: "linear", label: "Run agent on this task", detail: "Built-in terminal · core-api", started_at: Date.now() - 3600_000, ended_at: Date.now() - 3000_000 },
+    ];
+  return invoke<AgentSession[]>("agent_sessions_list");
+}

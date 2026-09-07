@@ -31,12 +31,25 @@ pub struct NotificationRow {
 #[tauri::command]
 pub fn list_notifications(db: State<AppDb>) -> Result<Vec<NotificationRow>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    // Wake expired snoozes: they come back as unread.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis() as i64;
+    conn.execute(
+        "UPDATE notifications SET state = 'unread', snoozed_until = NULL
+         WHERE state = 'snoozed' AND snoozed_until IS NOT NULL AND snoozed_until <= ?1",
+        [now],
+    )
+    .map_err(|e| e.to_string())?;
+
     let mut stmt = conn
         .prepare(
             "SELECT id, source, type, title, snippet, url, created_at, priority, state,
                     relevance_kind, relevance_score, relevance_reason, context_json
              FROM notifications
-             WHERE state != 'done'
+             WHERE state NOT IN ('done', 'snoozed')
              ORDER BY priority DESC, created_at DESC
              LIMIT 300",
         )
@@ -87,6 +100,18 @@ pub fn set_notification_state(db: State<AppDb>, id: String, state: String) -> Re
     conn.execute(
         "UPDATE notifications SET state = ?2 WHERE id = ?1",
         rusqlite::params![id, state],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Snoozes a notification until `until` (unix ms); it wakes as unread.
+#[tauri::command]
+pub fn snooze_notification(db: State<AppDb>, id: String, until: i64) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE notifications SET state = 'snoozed', snoozed_until = ?2 WHERE id = ?1",
+        rusqlite::params![id, until],
     )
     .map_err(|e| e.to_string())?;
     Ok(())

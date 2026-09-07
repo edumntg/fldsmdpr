@@ -8,8 +8,10 @@ import {
   Wrench,
   MousePointerClick,
 } from "lucide-react";
+import { useState } from "react";
 import { useInbox } from "../../stores/inbox";
 import { useUi } from "../../stores/ui";
+import { snoozeNotification } from "../../lib/ipc";
 import type { AppNotification } from "../../lib/types";
 import { relativeTime } from "../../lib/utils";
 import { Button } from "../../components/ui/Button";
@@ -109,10 +111,7 @@ export function NotificationDetail() {
               </Button>
             )}
             <div className="ml-auto flex gap-2">
-              <Button variant="ghost" title="Snooze">
-                <Clock size={14} />
-                Snooze
-              </Button>
+              <SnoozeButton n={n} onSnoozed={() => select(null)} />
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -128,6 +127,52 @@ export function NotificationDetail() {
         </div>
       </div>
     </section>
+  );
+}
+
+function SnoozeButton({ n, onSnoozed }: { n: AppNotification; onSnoozed: () => void }) {
+  const [open, setOpen] = useState(false);
+  const reload = useInbox((s) => s.reload);
+
+  const snooze = async (until: number) => {
+    setOpen(false);
+    await snoozeNotification(n.id, until);
+    await reload();
+    onSnoozed();
+  };
+
+  const tomorrow9 = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    return d.getTime();
+  };
+
+  return (
+    <div className="relative">
+      <Button variant="ghost" onClick={() => setOpen((o) => !o)}>
+        <Clock size={14} />
+        Snooze
+      </Button>
+      {open && (
+        <div className="animate-pop-in absolute right-0 bottom-full z-30 mb-1.5 w-44 overflow-hidden rounded-xl border border-line-strong bg-surface-2 p-1 shadow-pop">
+          {[
+            { label: "In 1 hour", until: () => Date.now() + 3600_000 },
+            { label: "In 4 hours", until: () => Date.now() + 4 * 3600_000 },
+            { label: "Tomorrow 9 AM", until: tomorrow9 },
+          ].map((o) => (
+            <button
+              key={o.label}
+              onClick={() => void snooze(o.until())}
+              className="flex w-full cursor-default items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-ink-2 hover:bg-surface-3"
+            >
+              <Clock size={12} className="shrink-0 text-ink-3" />
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

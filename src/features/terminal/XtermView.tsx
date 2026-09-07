@@ -66,12 +66,22 @@ export function XtermView({ tab, active }: { tab: TermTab; active: boolean }) {
     let disposed = false;
 
     void (async () => {
-      const id = await ptySpawn({
-        cwd: tab.cwd,
-        program: tab.kind === "claude" ? "claude" : undefined,
-        rows: term.rows,
-        cols: term.cols,
-      });
+      let id: string;
+      try {
+        id = await ptySpawn({
+          cwd: tab.cwd,
+          program: tab.kind === "claude" ? "claude" : undefined,
+          rows: term.rows,
+          cols: term.cols,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        term.write(`\x1b[31mFailed to start: ${msg}\x1b[0m\r\n`);
+        if (tab.kind === "claude" && tab.notificationId) {
+          useAgents.getState().setStatus(tab.notificationId, "failed", msg);
+        }
+        return;
+      }
       if (disposed) {
         void ptyKill(id);
         return;

@@ -170,8 +170,14 @@ export function NotificationList() {
   const groupOptions = SECTION_GROUPS[section] ?? ["none"];
   const activeGroup = groupOptions.includes(groupBy) ? groupBy : "none";
   const groups = groupItems(visible, activeGroup);
-  // Flattened order for j/k navigation across group sections.
-  const flat = groups.flatMap((g) => g.items);
+
+  // Collapsed group keys (reset when the grouping dimension changes).
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  useEffect(() => setCollapsed({}), [activeGroup, section]);
+
+  // Flattened order for j/k navigation — skipping collapsed groups, so the
+  // keyboard never selects (and marks read) items that aren't visible.
+  const flat = groups.flatMap((g) => (activeGroup !== "none" && collapsed[g.key] ? [] : g.items));
 
   // j/k keyboard navigation
   useEffect(() => {
@@ -204,10 +210,6 @@ export function NotificationList() {
     e.preventDefault();
     setMenu({ n, x: e.clientX, y: e.clientY });
   };
-
-  // Collapsed group keys (reset when the grouping dimension changes).
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  useEffect(() => setCollapsed({}), [activeGroup, section]);
 
   return (
     <section className="flex h-full w-95 shrink-0 flex-col border-r border-line bg-surface">

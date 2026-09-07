@@ -30,6 +30,8 @@ export const useSync = create<SyncState>((set, get) => ({
       const result = await runSync();
       set({ lastSyncAt: result.synced_at, lastError: result.errors[0] ?? null });
       await useInbox.getState().reload();
+    } catch (e) {
+      set({ lastError: e instanceof Error ? e.message : String(e) });
     } finally {
       set({ syncing: false });
     }
