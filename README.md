@@ -59,6 +59,14 @@ pnpm tauri build   # production bundle (DMG / MSI)
 
 Requires Rust (stable), Node 20+, and pnpm.
 
+### Packaging & distribution
+
+`pnpm tauri build` produces a real installable bundle:
+- **macOS:** `src-tauri/target/release/bundle/dmg/FLDSMDPR_<ver>_<arch>.dmg`. The build is **ad-hoc signed** (`signingIdentity: "-"`), which gives the binary a stable identity — so a macOS Keychain "Always Allow" sticks and the secrets prompt stops recurring (unlike `tauri dev`, where each rebuild is a new binary).
+- **Windows:** an NSIS installer under `bundle/nsis/`.
+
+For a **notarized, Gatekeeper-clean** macOS build (no "unidentified developer" warning), set an Apple Developer identity: put `APPLE_CERTIFICATE`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID` in the repo secrets — the `Release` workflow (on `v*` tags) picks them up automatically. Without them it still produces working, ad-hoc-signed bundles.
+
 ## Status
 
 🚧 **Pre-alpha — Phase 0 (foundation & design system) in progress.** See the [PRD](docs/PRD.md).
