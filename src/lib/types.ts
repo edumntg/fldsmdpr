@@ -46,6 +46,7 @@ export interface AppNotification {
 
 export type SectionId =
   | "today"
+  | "ask"
   | "inbox"
   | "prs"
   | "slack"

@@ -8,6 +8,7 @@ import { Onboarding, useOnboarding } from "./features/onboarding/Onboarding";
 import { TerminalDrawer } from "./features/terminal/TerminalDrawer";
 import { AgentsView } from "./features/agents/AgentsView";
 import { TodayView } from "./features/today/TodayView";
+import { AskView } from "./features/ask/AskView";
 import { useUi } from "./stores/ui";
 import { useTheme } from "./stores/theme";
 import { useSync } from "./stores/sync";
@@ -46,6 +47,8 @@ export default function App() {
           <AgentsView />
         ) : section === "today" ? (
           <TodayView />
+        ) : section === "ask" ? (
+          <AskView />
         ) : (
           <>
             <NotificationList />

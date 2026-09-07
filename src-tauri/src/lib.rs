@@ -1,5 +1,6 @@
 mod agents;
 mod ai_sources;
+mod ask;
 mod calendar;
 mod commands;
 mod connectors;
@@ -66,6 +67,7 @@ pub fn run() {
             providers::linear_update_issue,
             providers::linear_add_comment,
             ai_sources::granola_transcript,
+            ask::ask_claude,
             inbox::agent_notify,
             inbox::notification_set_meta,
             slack::slack_connect,

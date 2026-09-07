@@ -394,6 +394,21 @@ export async function linearAddComment(issueId: string, body: string): Promise<v
   return invoke("linear_add_comment", { issueId, body });
 }
 
+// ---- Ask (chat over the app's data) ----
+
+export interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export async function askClaude(question: string, history: ChatTurn[]): Promise<string> {
+  if (!inTauri) {
+    await new Promise((r) => setTimeout(r, 700));
+    return "**In the last 3 hours:** 2 new PR reviews on `core-api`, 1 urgent Slack task (payout webhook 500s), and the agent run for PLA-341 finished.";
+  }
+  return invoke<string>("ask_claude", { question, history });
+}
+
 // ---- agent completion notifications & meta links ----
 
 export async function agentNotify(args: {

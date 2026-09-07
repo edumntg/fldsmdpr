@@ -16,6 +16,7 @@ import {
   GraduationCap,
   Flame,
   NotebookPen,
+  Sparkles,
 } from "lucide-react";
 import { useUi } from "../../stores/ui";
 import { useTheme } from "../../stores/theme";
@@ -58,6 +59,7 @@ export function CommandPalette() {
     });
     return [
       go("today", "Today", Sunrise),
+      go("ask", "Ask (chat with your data)", Sparkles),
       go("inbox", "Inbox", Inbox),
       go("prs", "Pull Requests", GitPullRequest),
       go("slack", "Slack", MessageSquare),

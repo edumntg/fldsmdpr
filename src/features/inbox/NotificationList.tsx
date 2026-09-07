@@ -63,6 +63,7 @@ interface MenuState {
 
 const sectionTitles: Record<SectionId, string> = {
   today: "Today",
+  ask: "Ask",
   inbox: "Inbox",
   prs: "Pull Requests",
   slack: "Slack",
