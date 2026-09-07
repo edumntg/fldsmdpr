@@ -40,6 +40,7 @@ export function TodayView() {
   const setSection = useUi((s) => s.setSection);
   const select = useUi((s) => s.select);
   const [page, setPage] = useState(0);
+  const [filter, setFilter] = useState<Source | null>(null);
 
   const active = items.filter((n) => n.state !== "done");
   const agenda = active
@@ -47,11 +48,16 @@ export function TodayView() {
     .sort((a, b) => a.createdAt - b.createdAt);
   // Newest first, but anything the source marked high-priority jumps the queue.
   const allActionables = active
-    .filter((n) => n.source !== "gcal")
+    .filter((n) => n.source !== "gcal" && (!filter || n.source === filter))
     .sort(
       (a, b) =>
         Number(isHighPriority(b)) - Number(isHighPriority(a)) || b.createdAt - a.createdAt,
     );
+
+  const toggleFilter = (source: Source) => {
+    setFilter((f) => (f === source ? null : source));
+    setPage(0);
+  };
   const pageCount = Math.max(1, Math.ceil(allActionables.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const actionables = allActionables.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
@@ -83,19 +89,26 @@ export function TodayView() {
             <p className="mt-0.5 text-[13px] text-ink-3">{dateLabel}</p>
           </div>
 
-          {/* per-source counts — jump straight into a section */}
+          {/* per-source counts — click to filter the list below (click again to clear) */}
           <div className="flex flex-wrap gap-2">
             {[...counts.entries()]
               .sort((a, b) => b[1] - a[1])
               .map(([source, count]) => (
                 <button
                   key={source}
-                  onClick={() => setSection(sectionFor(source))}
-                  className="flex cursor-default items-center gap-2 rounded-xl border border-line bg-surface-2 py-1.5 pr-3 pl-1.5 shadow-card transition-colors hover:border-line-strong"
+                  onClick={() => toggleFilter(source)}
+                  className={cn(
+                    "flex cursor-default items-center gap-2 rounded-xl border py-1.5 pr-3 pl-1.5 shadow-card transition-colors",
+                    filter === source
+                      ? "border-accent bg-accent-soft"
+                      : "border-line bg-surface-2 hover:border-line-strong",
+                  )}
                 >
                   <SourceBadge source={source} size={13} />
                   <span className="text-[13px] font-semibold tabular-nums">{count}</span>
-                  <span className="text-xs text-ink-3">{sourceLabel(source)}</span>
+                  <span className={cn("text-xs", filter === source ? "font-medium text-accent" : "text-ink-3")}>
+                    {sourceLabel(source)}
+                  </span>
                 </button>
               ))}
             {counts.size === 0 && (
@@ -139,9 +152,14 @@ export function TodayView() {
             )}
           </Card>
 
-          <Card title="Top of your list" icon={Flame}>
+          <Card
+            title={filter ? `Top of your list · ${sourceLabel(filter)}` : "Top of your list"}
+            icon={Flame}
+          >
             {actionables.length === 0 ? (
-              <p className="text-[13px] text-ink-3">All clear — nothing waiting on you.</p>
+              <p className="text-[13px] text-ink-3">
+                {filter ? `Nothing pending from ${sourceLabel(filter)}.` : "All clear — nothing waiting on you."}
+              </p>
             ) : (
               <div className="flex flex-col">
                 {actionables.map((n, i) => (
@@ -215,25 +233,6 @@ export function TodayView() {
       </div>
     </section>
   );
-}
-
-function sectionFor(source: Source) {
-  switch (source) {
-    case "github":
-      return "prs" as const;
-    case "slack":
-      return "slack" as const;
-    case "linear":
-      return "tickets" as const;
-    case "sentry":
-      return "errors" as const;
-    case "granola":
-      return "meetings" as const;
-    case "gcal":
-      return "calendar" as const;
-    default:
-      return "inbox" as const;
-  }
 }
 
 function Card({ title, icon: Icon, children }: { title: string; icon: typeof Calendar; children: React.ReactNode }) {
