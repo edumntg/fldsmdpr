@@ -5,6 +5,7 @@ import { NotificationDetail } from "./features/inbox/NotificationDetail";
 import { SettingsView } from "./features/settings/SettingsView";
 import { CommandPalette } from "./features/palette/CommandPalette";
 import { Onboarding, useOnboarding } from "./features/onboarding/Onboarding";
+import { TerminalDrawer } from "./features/terminal/TerminalDrawer";
 import { useUi } from "./stores/ui";
 import { useTheme } from "./stores/theme";
 import { useSync } from "./stores/sync";
@@ -28,16 +29,19 @@ export default function App() {
   }, [initTheme, reloadInbox, initSync, refreshConnections, maybeAutoStartOnboarding]);
 
   return (
-    <div className="flex h-full">
-      <Sidebar />
-      {section === "settings" ? (
-        <SettingsView />
-      ) : (
-        <>
-          <NotificationList />
-          <NotificationDetail />
-        </>
-      )}
+    <div className="flex h-full flex-col">
+      <div className="flex min-h-0 flex-1">
+        <Sidebar />
+        {section === "settings" ? (
+          <SettingsView />
+        ) : (
+          <>
+            <NotificationList />
+            <NotificationDetail />
+          </>
+        )}
+      </div>
+      <TerminalDrawer />
       <CommandPalette />
       <Onboarding />
     </div>

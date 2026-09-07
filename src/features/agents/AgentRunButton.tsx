@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Bot, Check, ChevronDown, Loader2, TerminalSquare } from "lucide-react";
 import type { AppNotification } from "../../lib/types";
 import { launchOrca, orcaStatus } from "../../lib/ipc";
+import { repoLocalPath } from "../../lib/pty";
+import { useTerminal } from "../../stores/terminal";
 import { buildAgentPrompt, worktreeName } from "./prompt";
 import { cn } from "../../lib/utils";
 
@@ -38,15 +40,23 @@ export function AgentRunButton({ n, label, icon: Icon }: Props) {
     return () => window.removeEventListener("mousedown", onDown);
   }, [open]);
 
+  const openClaude = useTerminal((s) => s.openClaude);
+
   const run = async (runner: Runner) => {
     setOpen(false);
     setError(null);
-    if (runner === "claude-code") {
-      setError("Built-in Claude Code sessions land in Phase 4 — use Orca meanwhile.");
-      return;
-    }
     if (!n.meta?.repo) {
       setError("This item has no repository to work in.");
+      return;
+    }
+    if (runner === "claude-code") {
+      const cwd = (await repoLocalPath(n.meta.repo)) ?? undefined;
+      openClaude({
+        cwd,
+        prompt: buildAgentPrompt(n, label),
+        title: `claude · ${n.meta.number ?? n.meta.key ?? n.meta.repo}`,
+      });
+      setResult(cwd ? "Started in the built-in terminal" : "Started (repo not found locally — check cwd)");
       return;
     }
     setBusy(true);
@@ -114,8 +124,7 @@ export function AgentRunButton({ n, label, icon: Icon }: Props) {
           <RunnerOption
             icon={TerminalSquare}
             title="Built-in Claude Code"
-            subtitle="Runs in the FLDSMDPR terminal — Phase 4"
-            disabled
+            subtitle="Runs claude in the FLDSMDPR terminal"
             onClick={() => void run("claude-code")}
           />
         </div>

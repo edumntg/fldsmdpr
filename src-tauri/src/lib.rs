@@ -4,6 +4,7 @@ mod connectors;
 mod db;
 mod inbox;
 mod providers;
+mod pty;
 mod secrets;
 mod slack;
 
@@ -24,6 +25,7 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir)?;
             let conn = db::open(&data_dir.join("fldsmdpr.db"))?;
             app.manage(AppDb(Mutex::new(conn)));
+            app.manage(pty::PtyState::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -41,6 +43,11 @@ pub fn run() {
             inbox::set_notification_state,
             agents::orca_status,
             agents::launch_orca,
+            agents::repo_local_path,
+            pty::pty_spawn,
+            pty::pty_write,
+            pty::pty_resize,
+            pty::pty_kill,
             slack::slack_connect,
             slack::slack_list_channels,
             slack::slack_resolve_channel,

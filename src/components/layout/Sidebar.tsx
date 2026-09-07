@@ -14,6 +14,7 @@ import {
 import type { SectionId } from "../../lib/types";
 import { useUi } from "../../stores/ui";
 import { useInbox, unreadCount } from "../../stores/inbox";
+import { useTerminal } from "../../stores/terminal";
 import { cn, isMac, modKey } from "../../lib/utils";
 import { Kbd } from "../ui/Kbd";
 import { IconButton } from "../ui/IconButton";
@@ -30,6 +31,7 @@ const NAV: { id: SectionId; label: string; icon: typeof Inbox }[] = [
 export function Sidebar() {
   const { section, setSection, sidebarCollapsed, toggleSidebar, setPaletteOpen } = useUi();
   const items = useInbox((s) => s.items);
+  const toggleTerminal = useTerminal((s) => s.toggle);
 
   return (
     <aside
@@ -109,8 +111,8 @@ export function Sidebar() {
           icon={TerminalSquare}
           label="Terminal"
           collapsed={sidebarCollapsed}
-          onClick={() => {}}
-          hint="Phase 4"
+          onClick={toggleTerminal}
+          hint={`${modKey}J`}
         />
         <SidebarFooterItem
           icon={Settings}

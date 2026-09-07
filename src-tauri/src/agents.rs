@@ -88,6 +88,30 @@ fn resolve_repo_id(bin: &PathBuf, repo_slug: &str) -> Result<String, String> {
     ))
 }
 
+/// Resolves a GitHub "owner/name" slug to a local clone path via Orca's
+/// registered repos (used to spawn the built-in Claude Code session in the
+/// right directory). Returns None if Orca isn't installed or the repo is unknown.
+#[tauri::command]
+pub fn repo_local_path(repo: String) -> Option<String> {
+    let bin = orca_bin()?;
+    let body = run_orca_json(&bin, &["repo", "list", "--json"]).ok()?;
+    let repos = body["result"]["repos"].as_array()?;
+    let slug = repo.to_lowercase();
+    let short = repo.rsplit('/').next().unwrap_or(&repo).to_lowercase();
+    for r in repos {
+        let matches_remote = r["gitRemoteIdentity"]["canonicalKey"]
+            .as_str()
+            .is_some_and(|k| k.to_lowercase().ends_with(&format!("/{slug}")));
+        let matches_name = r["displayName"].as_str().map(str::to_lowercase) == Some(short.clone());
+        if matches_remote || matches_name {
+            if let Some(path) = r["path"].as_str() {
+                return Some(path.to_string());
+            }
+        }
+    }
+    None
+}
+
 #[derive(Serialize)]
 pub struct LaunchResult {
     pub worktree: String,

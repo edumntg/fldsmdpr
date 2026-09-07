@@ -52,7 +52,7 @@ pub async fn fetch(url: &str) -> Result<Vec<Fetched>, String> {
             meta.insert("location".into(), loc.clone());
         }
 
-        let mut snippet = format!("{time_label}");
+        let mut snippet = time_label.clone();
         if let Some(loc) = &ev.location {
             if !loc.starts_with("http") {
                 snippet.push_str(&format!(" · {loc}"));
@@ -127,11 +127,9 @@ impl Event {
                 return Some(c.clone());
             }
         }
-        for field in [&self.location, &self.description] {
-            if let Some(text) = field {
-                if let Some(link) = find_url(text) {
-                    return Some(link);
-                }
+        for text in [&self.location, &self.description].into_iter().flatten() {
+            if let Some(link) = find_url(text) {
+                return Some(link);
             }
         }
         None
