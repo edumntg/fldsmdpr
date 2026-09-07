@@ -249,6 +249,9 @@ export interface SentryIssueDetail {
   frames: SentryFrame[];
   tags: [string, string][];
   message: string;
+  breadcrumbs: string[];
+  logger: string;
+  platform: string;
 }
 
 export async function sentryIssueDetail(issueId: string): Promise<SentryIssueDetail> {
@@ -266,6 +269,9 @@ export async function sentryIssueDetail(issueId: string): Promise<SentryIssueDet
       exception_type: "TypeError",
       exception_value: "Cannot read properties of undefined (reading 'amount')",
       message: "",
+      breadcrumbs: ["[info] http http.method=POST url=https://api.example.com status_code=400"],
+      logger: "pino",
+      platform: "node",
       tags: [
         ["environment", "production"],
         ["release", "v2.41.0"],

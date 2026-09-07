@@ -177,6 +177,11 @@ pub struct SentryIssueDetail {
     pub frames: Vec<SentryFrame>,
     pub tags: Vec<(String, String)>,
     pub message: String,
+    /// Formatted trail of what happened before the error (http calls, logs) —
+    /// the main context for log-message issues that carry no stack trace.
+    pub breadcrumbs: Vec<String>,
+    pub logger: String,
+    pub platform: String,
 }
 
 /// Full issue context: metadata plus the latest event's exception chain,
@@ -210,6 +215,7 @@ pub async fn issue_detail(token: &str, issue_id: &str) -> Result<SentryIssueDeta
     let mut exception_value = String::new();
     let mut frames = Vec::new();
     let mut message = String::new();
+    let mut breadcrumbs = Vec::new();
     for entry in event["entries"].as_array().cloned().unwrap_or_default() {
         match entry["type"].as_str().unwrap_or("") {
             "exception" => {
@@ -265,6 +271,44 @@ pub async fn issue_detail(token: &str, issue_id: &str) -> Result<SentryIssueDeta
                     .unwrap_or("")
                     .to_string();
             }
+            "breadcrumbs" => {
+                let vals = entry["data"]["values"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default();
+                // The trail is oldest→newest; the last steps before the error
+                // are what explain it.
+                for c in vals.iter().rev().take(12).rev() {
+                    let cat = c["category"]
+                        .as_str()
+                        .or(c["type"].as_str())
+                        .unwrap_or("log");
+                    let lvl = c["level"].as_str().unwrap_or("info");
+                    let msg = c["message"].as_str().unwrap_or("");
+                    // Compact `key=value` dump of structured data (http calls
+                    // carry method/url/status here).
+                    let data = c["data"]
+                        .as_object()
+                        .map(|m| {
+                            m.iter()
+                                .filter_map(|(k, v)| {
+                                    let s = match v {
+                                        serde_json::Value::String(s) => s.clone(),
+                                        other => other.to_string(),
+                                    };
+                                    (s != "[Filtered]").then(|| format!("{k}={s}"))
+                                })
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        })
+                        .unwrap_or_default();
+                    let line = format!("[{lvl}] {cat} {msg} {data}");
+                    let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
+                    if line.len() > 8 {
+                        breadcrumbs.push(line.chars().take(220).collect());
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -298,5 +342,12 @@ pub async fn issue_detail(token: &str, issue_id: &str) -> Result<SentryIssueDeta
         frames,
         tags,
         message,
+        breadcrumbs,
+        logger: issue["logger"].as_str().unwrap_or("").to_string(),
+        platform: event["platform"]
+            .as_str()
+            .or(issue["platform"].as_str())
+            .unwrap_or("")
+            .to_string(),
     })
 }

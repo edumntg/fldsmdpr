@@ -17,11 +17,14 @@ function toPromptContext(d: SentryIssueDetail): string {
     )
     .join("\n");
   return [
-    `Sentry issue detail — project ${d.project}, level ${d.level}, ${d.count} events, ${d.user_count} users affected.`,
+    `Sentry issue detail — project ${d.project}, platform ${d.platform || "?"}, level ${d.level}, ${d.count} events, ${d.user_count} users affected.`,
     d.exception_type ? `Exception: ${d.exception_type}: ${d.exception_value}` : null,
-    d.message ? `Message: ${d.message}` : null,
+    d.message ? `Logged message: ${d.message}${d.logger ? ` (logger: ${d.logger})` : ""}` : null,
     d.culprit ? `Culprit: ${d.culprit}` : null,
     frames ? `Stack trace (newest first):\n${frames}` : null,
+    d.breadcrumbs.length
+      ? `Breadcrumbs (events leading up to the error, oldest first):\n${d.breadcrumbs.map((b) => `  ${b}`).join("\n")}`
+      : null,
     d.tags.length ? `Tags: ${d.tags.map(([k, v]) => `${k}=${v}`).join(", ")}` : null,
   ]
     .filter(Boolean)
@@ -82,6 +85,22 @@ export function SentrySections({ n }: { n: AppNotification }) {
           </p>
           {detail.culprit && <p className="mt-1 font-mono text-[11px] text-ink-3">{detail.culprit}</p>}
         </div>
+      )}
+
+      {detail.breadcrumbs.length > 0 && (
+        <Collapsible
+          title="What happened before the error"
+          badge={<Chip>{detail.breadcrumbs.length}</Chip>}
+          defaultOpen={shownFrames.length === 0}
+        >
+          <div className="flex flex-col gap-0.5">
+            {detail.breadcrumbs.map((b, i) => (
+              <p key={i} className="font-mono text-[11px] leading-4.5 text-ink-2 select-text">
+                {b}
+              </p>
+            ))}
+          </div>
+        </Collapsible>
       )}
 
       {shownFrames.length > 0 && (
