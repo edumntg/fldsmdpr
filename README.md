@@ -47,7 +47,7 @@ FLDSMDPR is a **fast, lightweight, local-first desktop app** (macOS & Windows) t
 | AI Triage | **Claude Haiku 4.5** (fast/cheap) with Sonnet escalation | Implicit-mention relevance classification |
 | Connectors | GitHub (GraphQL), Slack (Events/Socket Mode), Linear (GraphQL), Google Calendar | Polling + push where available |
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details and [docs/PRD.md](docs/PRD.md) for the phased roadmap.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design details.
 
 ## Development
 
@@ -69,7 +69,7 @@ For a **notarized, Gatekeeper-clean** macOS build (no "unidentified developer" w
 
 ## Status
 
-🚧 **Pre-alpha — Phase 0 (foundation & design system) in progress.** See the [PRD](docs/PRD.md).
+🚧 **Alpha — in active daily-driver use.** GitHub, Linear, Slack (via Claude + MCP), and Calendar connectors are live; agent dispatch works through Orca or the built-in Claude Code terminal.
 
 ## Repository Layout
 
@@ -86,5 +86,5 @@ fldsmdpr/
 │       ├── agents/       # Claude Code session management
 │       ├── db/           # SQLite schema & queries
 │       └── pty/          # terminal backend
-└── docs/                 # PRD, architecture, design notes
+└── docs/                 # architecture & design notes
 ```

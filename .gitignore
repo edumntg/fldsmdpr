@@ -25,3 +25,6 @@ dist-ssr
 
 # local claude settings
 .claude/
+
+# local-only product docs
+docs/PRD.md
