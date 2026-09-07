@@ -127,6 +127,40 @@ pub async fn ai_source_sync(
     Ok(new_count)
 }
 
+/// Meeting transcript via a Granola claude round, cached in kv so it's only
+/// slow the first time per meeting.
+#[tauri::command]
+pub async fn granola_transcript(db: State<'_, AppDb>, meeting: String) -> Result<String, String> {
+    let slug: String = meeting
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(60)
+        .collect();
+    let cache_key = format!("granola:transcript:{slug}");
+    {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        if let Some(cached) = kv(&conn, &cache_key).filter(|t| !t.is_empty()) {
+            return Ok(cached);
+        }
+    }
+
+    let m = meeting.clone();
+    let transcript = tauri::async_runtime::spawn_blocking(move || {
+        crate::connectors::ai_rounds::granola_transcript(&m)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    if transcript.is_empty() {
+        return Err("Transcript not found for this meeting.".into());
+    }
+    let capped: String = transcript.chars().take(20_000).collect();
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    kv_set(&conn, &cache_key, &capped);
+    Ok(capped)
+}
+
 /// Morning briefing: a native notification summarizing the day, fired by the
 /// frontend right after the daily refresh completes.
 #[tauri::command]

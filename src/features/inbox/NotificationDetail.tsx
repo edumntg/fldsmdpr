@@ -44,6 +44,7 @@ import { useAgents } from "../../stores/agents";
 import { Collapsible } from "../../components/ui/Collapsible";
 import { Markdown } from "../../components/ui/Markdown";
 import { SentrySections } from "./SentrySections";
+import { GranolaSections } from "./GranolaSections";
 import { CreateTicketButton } from "./CreateTicketModal";
 import { LinearStateChip } from "../../components/ui/LinearStateChip";
 
@@ -132,6 +133,8 @@ export function NotificationDetail() {
           {n.source === "github" && n.meta?.is_pr !== "false" && <PrSections n={n} />}
 
           {n.source === "sentry" && <SentrySections n={n} />}
+
+          {n.source === "granola" && <GranolaSections n={n} />}
 
           {agentRun && <AgentStatusPanel run={agentRun} />}
 

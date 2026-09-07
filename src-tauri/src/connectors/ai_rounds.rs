@@ -107,9 +107,20 @@ pub fn granola_round() -> Result<Vec<Fetched>, String> {
         Respond with ONLY a JSON object: {\"items\":[{\"meeting\":\"\",\"text\":\"\",\"when\":\"ISO-8601\",\"url\":\"\"}]}\n\
         - \"text\": the action item in one sentence. Max 15 items. If none or Granola unavailable: {\"items\":[]}.";
     let obj = run_round("mcp__claude_ai_Granola", prompt, 300)?;
+    let items = obj["items"].as_array().cloned().unwrap_or_default();
+
+    // All action items per meeting, so each notification can show its
+    // siblings ("everything from this meeting") in the detail pane.
+    let mut per_meeting: HashMap<String, Vec<String>> = HashMap::new();
+    for it in &items {
+        let meeting = it["meeting"].as_str().unwrap_or("Meeting").to_string();
+        if let Some(text) = it["text"].as_str().filter(|t| !t.is_empty()) {
+            per_meeting.entry(meeting).or_default().push(text.into());
+        }
+    }
 
     let mut out = Vec::new();
-    for it in obj["items"].as_array().cloned().unwrap_or_default() {
+    for it in &items {
         let meeting = it["meeting"].as_str().unwrap_or("Meeting").to_string();
         let text = it["text"].as_str().unwrap_or("").to_string();
         if text.is_empty() {
@@ -122,6 +133,12 @@ pub fn granola_round() -> Result<Vec<Fetched>, String> {
             .collect();
         let mut meta = HashMap::new();
         meta.insert("meeting".into(), meeting.clone());
+        if let Some(all) = per_meeting.get(&meeting) {
+            meta.insert(
+                "meeting_items".into(),
+                serde_json::to_string(all).unwrap_or_default(),
+            );
+        }
         out.push(Fetched {
             id: format!("granola:{meeting}:{key}"),
             source: "granola",
@@ -139,4 +156,18 @@ pub fn granola_round() -> Result<Vec<Fetched>, String> {
         });
     }
     Ok(out)
+}
+
+/// Fetches (a condensed version of) one meeting's transcript via the Granola
+/// MCP connector. Slow (~1 min) — the caller caches the result.
+pub fn granola_transcript(meeting: &str) -> Result<String, String> {
+    let safe = meeting.replace('"', "'");
+    let prompt = format!(
+        "Using the Granola tools, find my meeting titled \"{safe}\" (search my meetings from the last 14 days; pick the closest title match) and fetch its transcript.\n\
+         Respond with ONLY a JSON object: {{\"transcript\":\"...\"}}.\n\
+         - Keep speaker labels. If the transcript exceeds ~12000 characters, keep the parts with decisions, action items and discussions (mark cuts with […]).\n\
+         - If the meeting or transcript can't be found: {{\"transcript\":\"\"}}."
+    );
+    let obj = run_round("mcp__claude_ai_Granola", &prompt, 360)?;
+    Ok(obj["transcript"].as_str().unwrap_or("").to_string())
 }

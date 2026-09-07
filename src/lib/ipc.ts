@@ -437,6 +437,15 @@ export async function aiSourceSync(source: string): Promise<number> {
   return invoke<number>("ai_source_sync", { source });
 }
 
+/** Meeting transcript via a Granola claude round (~1 min first time, cached after). */
+export async function granolaTranscript(meeting: string): Promise<string> {
+  if (!inTauri) {
+    await new Promise((r) => setTimeout(r, 800));
+    return "**Eduardo:** Let's ship the retry fix this week.\n**A teammate:** I'll review the PR tomorrow morning.";
+  }
+  return invoke<string>("granola_transcript", { meeting });
+}
+
 export async function morningBriefing(): Promise<void> {
   if (!inTauri) return;
   return invoke("morning_briefing");

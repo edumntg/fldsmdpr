@@ -65,6 +65,7 @@ pub fn run() {
             providers::linear_create_issue,
             providers::linear_update_issue,
             providers::linear_add_comment,
+            ai_sources::granola_transcript,
             inbox::agent_notify,
             inbox::notification_set_meta,
             slack::slack_connect,
