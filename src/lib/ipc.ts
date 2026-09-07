@@ -130,6 +130,29 @@ export async function slackSetChannels(channels: SlackChannel[]): Promise<void> 
   return invoke("slack_set_channels", { channels });
 }
 
+// ---- macOS Calendar ----
+
+export interface MacCalConfig {
+  available: boolean;
+  enabled: boolean;
+  calendars: string[];
+}
+
+export async function maccalConfig(): Promise<MacCalConfig> {
+  if (!inTauri) return { available: true, enabled: false, calendars: [] };
+  return invoke<MacCalConfig>("maccal_config");
+}
+
+export async function maccalListCalendars(): Promise<string[]> {
+  if (!inTauri) return ["eduardo@company.com", "Personal"];
+  return invoke<string[]>("maccal_list_calendars");
+}
+
+export async function maccalSetConfig(enabled: boolean, calendars: string[]): Promise<void> {
+  if (!inTauri) return;
+  return invoke("maccal_set_config", { enabled, calendars });
+}
+
 // ---- agents ----
 
 export async function orcaStatus(): Promise<{ installed: boolean }> {

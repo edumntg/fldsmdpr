@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Shown when FLDSMDPR reads the local Calendar (via Calendar.app automation)
+       to surface upcoming meetings. -->
+  <key>NSAppleEventsUsageDescription</key>
+  <string>FLDSMDPR reads your Calendar events to show upcoming meetings in your inbox.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>FLDSMDPR reads your Calendar events to show upcoming meetings in your inbox.</string>
+</dict>
+</plist>

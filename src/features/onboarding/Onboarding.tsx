@@ -5,6 +5,7 @@ import { kvGet, kvSet } from "../../lib/ipc";
 import { PROVIDER_META } from "../connections/providerMeta";
 import { ConnectionCard } from "../connections/ConnectionCard";
 import { SlackConnectionCard } from "../connections/SlackConnectionCard";
+import { CalendarCard } from "../connections/CalendarCard";
 import { useConnections, connectedCount } from "../../stores/connections";
 import { Button } from "../../components/ui/Button";
 import { cn } from "../../lib/utils";
@@ -51,7 +52,9 @@ export function Onboarding() {
   const providerConnected = provider
     ? (statuses.find((s) => s.id === provider.id)?.connected ?? false)
     : false;
-  const mustConnect = provider !== null && provider.available && !providerConnected;
+  // Calendar connects via macOS (not a token in `statuses`), so it never gates.
+  const mustConnect =
+    provider !== null && provider.available && provider.id !== "gcal" && !providerConnected;
 
   return (
     <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/30">
@@ -114,6 +117,8 @@ export function Onboarding() {
           {provider &&
             (provider.id === "slack" ? (
               <SlackConnectionCard defaultExpanded />
+            ) : provider.id === "gcal" ? (
+              <CalendarCard defaultExpanded />
             ) : (
               <ConnectionCard meta={provider} defaultExpanded />
             ))}

@@ -1,6 +1,7 @@
 pub mod gcal;
 pub mod github;
 pub mod linear;
+pub mod maccal;
 pub mod slack;
 
 use std::collections::HashMap;

@@ -241,6 +241,27 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
             Err(e) => errors.push(format!("gcal: {e}")),
         }
     }
+    // Local macOS Calendar (reads a Google account synced via Internet Accounts).
+    {
+        let (enabled, cals) = {
+            let conn = db.0.lock().map_err(|e| e.to_string())?;
+            (
+                crate::calendar::is_enabled(&conn),
+                crate::calendar::selected_calendars(&conn),
+            )
+        };
+        if enabled {
+            match crate::connectors::maccal::fetch(&cals) {
+                Ok(items) => {
+                    fetched.extend(items);
+                    if !synced.contains(&"gcal".to_string()) {
+                        synced.push("gcal".into());
+                    }
+                }
+                Err(e) => errors.push(format!("calendar: {e}")),
+            }
+        }
+    }
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

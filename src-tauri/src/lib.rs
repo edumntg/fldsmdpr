@@ -1,4 +1,5 @@
 mod agents;
+mod calendar;
 mod commands;
 mod connectors;
 mod db;
@@ -53,6 +54,9 @@ pub fn run() {
             slack::slack_resolve_channel,
             slack::slack_get_channels,
             slack::slack_set_channels,
+            calendar::maccal_config,
+            calendar::maccal_list_calendars,
+            calendar::maccal_set_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
