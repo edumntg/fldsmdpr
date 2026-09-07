@@ -305,3 +305,85 @@ pub async fn create_issue(token: &str, issue: NewIssue) -> Result<serde_json::Va
     }
     Ok(body["data"]["issueCreate"]["issue"].clone())
 }
+
+// ---- Inline issue actions (state change, assign, comment) ----
+
+async fn graphql(
+    token: &str,
+    query: &str,
+    variables: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("fldsmdpr/0.1")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client
+        .post("https://api.linear.app/graphql")
+        .header("Authorization", token)
+        .json(&json!({ "query": query, "variables": variables }))
+        .send()
+        .await
+        .map_err(|e| format!("Linear request failed: {e}"))?;
+    if !res.status().is_success() {
+        return Err(format!("Linear request failed (HTTP {})", res.status()));
+    }
+    let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    if let Some(err) = body["errors"].as_array().and_then(|e| e.first()) {
+        return Err(err["message"]
+            .as_str()
+            .unwrap_or("GraphQL error")
+            .to_string());
+    }
+    Ok(body["data"].clone())
+}
+
+/// The token owner's user id (for "Assign to me").
+pub async fn viewer_id(token: &str) -> Result<String, String> {
+    let data = graphql(token, "{ viewer { id } }", json!({})).await?;
+    data["viewer"]["id"]
+        .as_str()
+        .map(String::from)
+        .ok_or_else(|| "No viewer id".into())
+}
+
+/// Updates an issue's workflow state and/or assignee (either may be None).
+pub async fn update_issue(
+    token: &str,
+    issue_id: &str,
+    state_id: Option<String>,
+    assignee_id: Option<String>,
+) -> Result<(), String> {
+    let mut input = serde_json::Map::new();
+    if let Some(s) = state_id.filter(|s| !s.is_empty()) {
+        input.insert("stateId".into(), json!(s));
+    }
+    if let Some(a) = assignee_id.filter(|s| !s.is_empty()) {
+        input.insert("assigneeId".into(), json!(a));
+    }
+    if input.is_empty() {
+        return Ok(());
+    }
+    let data = graphql(
+        token,
+        "mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }",
+        json!({ "id": issue_id, "input": input }),
+    )
+    .await?;
+    if data["issueUpdate"]["success"].as_bool() != Some(true) {
+        return Err("Linear rejected the update".into());
+    }
+    Ok(())
+}
+
+pub async fn add_comment(token: &str, issue_id: &str, body: &str) -> Result<(), String> {
+    let data = graphql(
+        token,
+        "mutation($input: CommentCreateInput!) { commentCreate(input: $input) { success } }",
+        json!({ "input": { "issueId": issue_id, "body": body } }),
+    )
+    .await?;
+    if data["commentCreate"]["success"].as_bool() != Some(true) {
+        return Err("Linear rejected the comment".into());
+    }
+    Ok(())
+}

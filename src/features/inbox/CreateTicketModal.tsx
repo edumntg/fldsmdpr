@@ -4,8 +4,10 @@ import { CircleDot, Loader2, Check, X, Bot, ExternalLink } from "lucide-react";
 import {
   linearMeta,
   linearCreateIssue,
+  notificationSetMeta,
   type LinearTeamMeta,
 } from "../../lib/ipc";
+import { useInbox } from "../../stores/inbox";
 import type { AppNotification } from "../../lib/types";
 import { Button } from "../../components/ui/Button";
 import { useAgents } from "../../stores/agents";
@@ -105,6 +107,10 @@ function CreateTicketModal({ n, onClose }: { n: AppNotification; onClose: () => 
         due_date: dueDate || undefined,
       });
       setCreated(issue);
+      // Link the new ticket back to its source so both directions stay visible.
+      void notificationSetMeta(n.id, "linked_ticket", issue.identifier)
+        .then(() => notificationSetMeta(n.id, "linked_ticket_url", issue.url))
+        .then(() => useInbox.getState().reload());
       if (launchAgent) {
         void launch(n, "Fix with agent", "claude", {
           extra: `A Linear ticket was created for this work: ${issue.identifier} — ${issue.url}. Reference it in your branch/commit/PR.`,

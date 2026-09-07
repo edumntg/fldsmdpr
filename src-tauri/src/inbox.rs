@@ -243,3 +243,94 @@ pub fn upsert(conn: &rusqlite::Connection, items: &[Fetched]) -> Result<usize, S
     }
     Ok(new_count)
 }
+
+/// Inbox notification when a Claude agent run finishes (done/failed), so
+/// results aren't missed if the Agents view isn't open. Also fires a native
+/// notification; `waiting` runs get only the native ping (no inbox row).
+#[tauri::command]
+pub fn agent_notify(
+    app: tauri::AppHandle,
+    db: State<AppDb>,
+    run_id: String,
+    orig_id: String,
+    title: String,
+    detail: String,
+    kind: String, // waiting | done | failed
+) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+
+    let (native_title, priority) = match kind.as_str() {
+        "waiting" => ("Agent waiting for you", 0.0),
+        "failed" => ("Agent failed", 84.0),
+        _ => ("Agent finished", 80.0),
+    };
+    let _ = app
+        .notification()
+        .builder()
+        .title(native_title)
+        .body(&title)
+        .show();
+
+    if kind == "waiting" {
+        return Ok(());
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis() as i64;
+    let mut meta = HashMap::new();
+    meta.insert("orig_id".into(), orig_id);
+    meta.insert("outcome".into(), kind.clone());
+    let item = Fetched {
+        id: format!("agent:{run_id}"),
+        source: "agent",
+        ntype: "agent_done",
+        title: format!(
+            "{} — {}",
+            if kind == "failed" {
+                "Agent failed"
+            } else {
+                "Agent finished"
+            },
+            title
+        ),
+        snippet: detail,
+        url: None,
+        created_at: now,
+        priority,
+        meta,
+        relevance: None,
+    };
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    upsert(&conn, std::slice::from_ref(&item))?;
+    Ok(())
+}
+
+/// Merges one key into a notification's meta (context_json) — used to link a
+/// created Linear ticket back to its source Sentry/Slack item.
+#[tauri::command]
+pub fn notification_set_meta(
+    db: State<AppDb>,
+    id: String,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let current: String = conn
+        .query_row(
+            "SELECT context_json FROM notifications WHERE id = ?1",
+            [&id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let mut meta: HashMap<String, String> = serde_json::from_str(&current).unwrap_or_default();
+    meta.insert(key, value);
+    let json = serde_json::to_string(&meta).map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE notifications SET context_json = ?1 WHERE id = ?2",
+        rusqlite::params![json, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}

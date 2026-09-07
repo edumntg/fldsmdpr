@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { AppNotification } from "../lib/types";
-import { launchOrca, agentSessionUpsert } from "../lib/ipc";
+import { launchOrca, agentSessionUpsert, agentNotify } from "../lib/ipc";
+import { useInbox } from "./inbox";
 import { repoLocalPath } from "../lib/pty";
 import { useTerminal } from "./terminal";
 import { buildAgentPrompt, worktreeName } from "../features/agents/prompt";
@@ -67,6 +68,24 @@ export const useAgents = create<AgentsState>((set, get) => ({
         endedAt: status === "done" || status === "failed" ? Date.now() : run.endedAt,
       };
       persist(next);
+      // Surface Claude-run milestones: native ping when it pauses for you,
+      // inbox notification when it finishes (skip user-closed terminals and
+      // Orca dispatches — those aren't real completions).
+      if (run.runner === "claude" && run.status !== status) {
+        const kind =
+          status === "waiting" ? "waiting" : status === "failed" ? "failed" : status === "done" ? "done" : null;
+        if (kind && !(kind === "done" && next.detail === "Terminal closed")) {
+          void agentNotify({
+            runId: run.id,
+            origId: run.notificationId,
+            title: run.title,
+            detail: `${run.label} · ${next.detail ?? ""}`,
+            kind,
+          }).then(() => {
+            if (kind !== "waiting") void useInbox.getState().reload();
+          });
+        }
+      }
       return { runs: { ...s.runs, [id]: next } };
     }),
 

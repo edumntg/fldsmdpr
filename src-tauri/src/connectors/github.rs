@@ -166,6 +166,16 @@ pub struct PrFile {
 }
 
 #[derive(serde::Serialize)]
+pub struct PrCheck {
+    pub name: String,
+    /// queued | in_progress | completed
+    pub status: String,
+    /// success | failure | neutral | cancelled | skipped | timed_out | … (empty until completed)
+    pub conclusion: String,
+    pub url: Option<String>,
+}
+
+#[derive(serde::Serialize)]
 pub struct PrDetail {
     pub body: String,
     pub author: String,
@@ -178,6 +188,12 @@ pub struct PrDetail {
     pub files: Vec<PrFile>,
     /// True when the file list was capped (very large PRs).
     pub truncated: bool,
+    pub state: String,
+    pub merged: bool,
+    pub draft: bool,
+    /// clean | dirty | blocked | unstable | unknown — GitHub's merge readiness.
+    pub mergeable_state: String,
+    pub checks: Vec<PrCheck>,
 }
 
 const MAX_FILES: usize = 50;
@@ -243,6 +259,27 @@ pub async fn pr_detail(token: &str, repo: &str, number: i64) -> Result<PrDetail,
         })
         .unwrap_or_default();
 
+    // CI status: check runs for the PR's head commit.
+    let mut checks = Vec::new();
+    if let Some(sha) = pr["head"]["sha"].as_str() {
+        let res = get(format!(
+            "https://api.github.com/repos/{repo}/commits/{sha}/check-runs?per_page=50"
+        ))
+        .await
+        .map_err(|e| format!("GitHub request failed: {e}"))?;
+        if res.status().is_success() {
+            let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+            for c in body["check_runs"].as_array().cloned().unwrap_or_default() {
+                checks.push(PrCheck {
+                    name: c["name"].as_str().unwrap_or("check").to_string(),
+                    status: c["status"].as_str().unwrap_or("").to_string(),
+                    conclusion: c["conclusion"].as_str().unwrap_or("").to_string(),
+                    url: c["html_url"].as_str().map(String::from),
+                });
+            }
+        }
+    }
+
     let changed_files = pr["changed_files"].as_i64().unwrap_or(files.len() as i64);
     Ok(PrDetail {
         body: pr["body"].as_str().unwrap_or("").to_string(),
@@ -255,5 +292,73 @@ pub async fn pr_detail(token: &str, repo: &str, number: i64) -> Result<PrDetail,
         commits: pr["commits"].as_i64().unwrap_or(0),
         truncated: changed_files > files.len() as i64,
         files,
+        state: pr["state"].as_str().unwrap_or("open").to_string(),
+        merged: pr["merged"].as_bool().unwrap_or(false),
+        draft: pr["draft"].as_bool().unwrap_or(false),
+        mergeable_state: pr["mergeable_state"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_string(),
+        checks,
     })
+}
+
+/// Submit a PR review: `event` is APPROVE, REQUEST_CHANGES or COMMENT.
+pub async fn pr_review(
+    token: &str,
+    repo: &str,
+    number: i64,
+    event: &str,
+    body: &str,
+) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .user_agent("fldsmdpr/0.1")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client
+        .post(format!(
+            "https://api.github.com/repos/{repo}/pulls/{number}/reviews"
+        ))
+        .bearer_auth(token)
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("Accept", "application/vnd.github+json")
+        .json(&serde_json::json!({ "event": event, "body": body }))
+        .send()
+        .await
+        .map_err(|e| format!("GitHub request failed: {e}"))?;
+    if !res.status().is_success() {
+        let body: serde_json::Value = res.json().await.unwrap_or_default();
+        return Err(body["message"]
+            .as_str()
+            .map(|m| format!("GitHub: {m}"))
+            .unwrap_or_else(|| "GitHub review failed".into()));
+    }
+    Ok(())
+}
+
+/// Merge a PR. `method` is merge, squash or rebase.
+pub async fn pr_merge(token: &str, repo: &str, number: i64, method: &str) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .user_agent("fldsmdpr/0.1")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client
+        .put(format!(
+            "https://api.github.com/repos/{repo}/pulls/{number}/merge"
+        ))
+        .bearer_auth(token)
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("Accept", "application/vnd.github+json")
+        .json(&serde_json::json!({ "merge_method": method }))
+        .send()
+        .await
+        .map_err(|e| format!("GitHub request failed: {e}"))?;
+    if !res.status().is_success() {
+        let body: serde_json::Value = res.json().await.unwrap_or_default();
+        return Err(body["message"]
+            .as_str()
+            .map(|m| format!("GitHub: {m}"))
+            .unwrap_or_else(|| "GitHub merge failed".into()));
+    }
+    Ok(())
 }

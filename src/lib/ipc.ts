@@ -184,6 +184,13 @@ export interface PrFile {
   patch: string | null;
 }
 
+export interface PrCheck {
+  name: string;
+  status: string;
+  conclusion: string;
+  url: string | null;
+}
+
 export interface PrDetail {
   body: string;
   author: string;
@@ -195,6 +202,11 @@ export interface PrDetail {
   commits: number;
   files: PrFile[];
   truncated: boolean;
+  state: string;
+  merged: boolean;
+  draft: boolean;
+  mergeable_state: string;
+  checks: PrCheck[];
 }
 
 export async function githubPrDetail(repo: string, number: number): Promise<PrDetail> {
@@ -219,9 +231,32 @@ export async function githubPrDetail(repo: string, number: number): Promise<PrDe
         },
         { filename: "src/worker/retry.test.ts", status: "modified", additions: 22, deletions: 13, patch: null },
       ],
+      state: "open",
+      merged: false,
+      draft: false,
+      mergeable_state: "clean",
+      checks: [
+        { name: "ci/tests", status: "completed", conclusion: "success", url: null },
+        { name: "ci/lint", status: "in_progress", conclusion: "", url: null },
+      ],
     };
   }
   return invoke<PrDetail>("github_pr_detail", { repo, number });
+}
+
+export async function githubPrReview(
+  repo: string,
+  number: number,
+  event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT",
+  body: string,
+): Promise<void> {
+  if (!inTauri) return;
+  return invoke("github_pr_review", { repo, number, event, body });
+}
+
+export async function githubPrMerge(repo: string, number: number, method: string): Promise<void> {
+  if (!inTauri) return;
+  return invoke("github_pr_merge", { repo, number, method });
 }
 
 // ---- Sentry issue detail ----
@@ -342,6 +377,40 @@ export async function linearCreateIssue(
     return { identifier: "PLA-999", url: "https://linear.app/example", title: issue.title };
   }
   return invoke("linear_create_issue", { issue });
+}
+
+/** Change workflow state and/or assignee ("me" = token owner). */
+export async function linearUpdateIssue(
+  issueId: string,
+  stateId?: string,
+  assigneeId?: string,
+): Promise<void> {
+  if (!inTauri) return;
+  return invoke("linear_update_issue", { issueId, stateId, assigneeId });
+}
+
+export async function linearAddComment(issueId: string, body: string): Promise<void> {
+  if (!inTauri) return;
+  return invoke("linear_add_comment", { issueId, body });
+}
+
+// ---- agent completion notifications & meta links ----
+
+export async function agentNotify(args: {
+  runId: string;
+  origId: string;
+  title: string;
+  detail: string;
+  kind: "waiting" | "done" | "failed";
+}): Promise<void> {
+  if (!inTauri) return;
+  return invoke("agent_notify", args);
+}
+
+/** Merge one key into a stored notification's meta (e.g. linked_ticket). */
+export async function notificationSetMeta(id: string, key: string, value: string): Promise<void> {
+  if (!inTauri) return;
+  return invoke("notification_set_meta", { id, key, value });
 }
 
 // ---- AI sources (Notion / Granola via claude rounds) ----

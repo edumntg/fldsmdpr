@@ -7,11 +7,32 @@ import {
   Sparkles,
   Wrench,
   MousePointerClick,
+  Loader2,
+  Minus,
+  X as XIcon,
+  Send,
+  UserRoundPlus,
+  TerminalSquare,
+  CircleDot,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useInbox } from "../../stores/inbox";
 import { useUi } from "../../stores/ui";
-import { snoozeNotification, githubPrDetail, type PrDetail } from "../../lib/ipc";
+import { useSync } from "../../stores/sync";
+import { useTerminal } from "../../stores/terminal";
+import {
+  linearMeta,
+  linearUpdateIssue,
+  linearAddComment,
+  type LinearTeamMeta,
+} from "../../lib/ipc";
+import {
+  snoozeNotification,
+  githubPrDetail,
+  githubPrReview,
+  githubPrMerge,
+  type PrDetail,
+} from "../../lib/ipc";
 import type { AppNotification } from "../../lib/types";
 import { relativeTime } from "../../lib/utils";
 import { Button } from "../../components/ui/Button";
@@ -81,6 +102,15 @@ export function NotificationDetail() {
                 {n.meta?.cycle && <span>· {n.meta.cycle}</span>}
                 {n.meta?.team && <span>· {n.meta.team}</span>}
                 {n.source === "linear" && <LinearStateChip n={n} />}
+                {n.meta?.linked_ticket && (
+                  <button
+                    onClick={() => void open(n.meta?.linked_ticket_url)}
+                    className="inline-flex cursor-default items-center gap-1 rounded-pill bg-src-linear/12 px-1.5 py-0.5 text-[10.5px] font-medium text-src-linear hover:underline"
+                  >
+                    <CircleDot size={10} />
+                    {n.meta.linked_ticket}
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -110,6 +140,7 @@ export function NotificationDetail() {
               <AgentRunButton key={label} n={n} label={label} icon={icon} />
             ))}
             {(n.source === "sentry" || n.source === "slack") && <CreateTicketButton n={n} />}
+            {n.source === "agent" && <OpenAgentTerminal n={n} />}
             {n.url && (
               <Button
                 variant={n.source === "gcal" ? "primary" : "secondary"}
@@ -232,6 +263,8 @@ function PrSections({ n }: { n: AppNotification }) {
         </Collapsible>
       )}
 
+      {detail.checks.length > 0 && <PrChecks checks={detail.checks} />}
+
       <Collapsible title={`Files changed (${detail.changed_files})`} defaultOpen>
         <div className="flex flex-col gap-1.5">
           {detail.files.map((f) => (
@@ -244,6 +277,160 @@ function PrSections({ n }: { n: AppNotification }) {
           )}
         </div>
       </Collapsible>
+
+      {detail.state === "open" && !detail.merged && (
+        <PrActions repo={repo} number={number} mergeableState={detail.mergeable_state} draft={detail.draft} />
+      )}
+    </div>
+  );
+}
+
+function checkIcon(c: PrDetail["checks"][number]) {
+  if (c.status !== "completed")
+    return <Loader2 size={12} className="animate-spin text-warning" />;
+  if (c.conclusion === "success") return <Check size={12} className="text-success" />;
+  if (c.conclusion === "skipped" || c.conclusion === "neutral")
+    return <Minus size={12} className="text-ink-3" />;
+  return <XIcon size={12} className="text-danger" />;
+}
+
+function PrChecks({ checks }: { checks: PrDetail["checks"] }) {
+  const failing = checks.filter((c) => c.status === "completed" && !["success", "skipped", "neutral"].includes(c.conclusion));
+  const running = checks.filter((c) => c.status !== "completed");
+  const summary =
+    failing.length > 0
+      ? `${failing.length} failing`
+      : running.length > 0
+        ? `${running.length} running`
+        : "all passing";
+  return (
+    <Collapsible
+      title={`CI checks (${checks.length}) — ${summary}`}
+      defaultOpen={failing.length > 0}
+    >
+      <div className="flex flex-col gap-1">
+        {checks.map((c, i) => (
+          <button
+            key={i}
+            onClick={() => c.url && open(c.url)}
+            className="flex w-full cursor-default items-center gap-2 rounded-lg bg-surface px-2.5 py-1.5 text-left hover:bg-surface-3"
+          >
+            {checkIcon(c)}
+            <span className="min-w-0 flex-1 truncate text-xs font-medium">{c.name}</span>
+            <span className="shrink-0 text-[11px] text-ink-3">{c.conclusion || c.status}</span>
+          </button>
+        ))}
+      </div>
+    </Collapsible>
+  );
+}
+
+/** Approve / request changes / comment / merge — the full review loop without
+ * leaving the app. */
+function PrActions({
+  repo,
+  number,
+  mergeableState,
+  draft,
+}: {
+  repo: string;
+  number: number;
+  mergeableState: string;
+  draft: boolean;
+}) {
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmMerge, setConfirmMerge] = useState(false);
+
+  const act = async (label: string, fn: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(label);
+    setError(null);
+    setResult(null);
+    try {
+      await fn();
+      setResult(label === "merge" ? "Merged ✓" : "Review submitted ✓");
+      setComment("");
+      setConfirmMerge(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const review = (event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT") =>
+    act(event, () => githubPrReview(repo, number, event, comment));
+
+  return (
+    <div className="rounded-xl border border-line bg-surface p-3">
+      <textarea
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        placeholder="Review comment (optional for approve, required for request changes / comment)…"
+        rows={2}
+        className="w-full resize-y rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent"
+      />
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Button size="sm" onClick={() => void review("APPROVE")} disabled={!!busy}>
+          {busy === "APPROVE" ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+          Approve
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => void review("REQUEST_CHANGES")}
+          disabled={!!busy || !comment.trim()}
+        >
+          Request changes
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => void review("COMMENT")}
+          disabled={!!busy || !comment.trim()}
+        >
+          Comment
+        </Button>
+        <div className="ml-auto">
+          {confirmMerge ? (
+            <span className="flex items-center gap-1.5">
+              <span className="text-xs text-ink-3">Squash-merge?</span>
+              <Button
+                size="sm"
+                onClick={() => void act("merge", () => githubPrMerge(repo, number, "squash"))}
+                disabled={!!busy}
+              >
+                {busy === "merge" ? <Loader2 size={12} className="animate-spin" /> : null}
+                Confirm
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmMerge(false)}>
+                No
+              </Button>
+            </span>
+          ) : (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setConfirmMerge(true)}
+              disabled={!!busy || draft || mergeableState === "dirty"}
+              title={
+                draft
+                  ? "Draft PR"
+                  : mergeableState === "dirty"
+                    ? "Has conflicts"
+                    : `Mergeable: ${mergeableState}`
+              }
+            >
+              Merge
+            </Button>
+          )}
+        </div>
+      </div>
+      {result && <p className="mt-1.5 text-xs font-medium text-success">{result}</p>}
+      {error && <p className="mt-1.5 text-xs text-danger">{error}</p>}
     </div>
   );
 }
@@ -298,6 +485,131 @@ interface TicketComment {
   at: string;
 }
 
+/** Jump back to the terminal tab of a finished agent run, if it's still open. */
+function OpenAgentTerminal({ n }: { n: AppNotification }) {
+  const tabs = useTerminal((s) => s.tabs);
+  const activate = useTerminal((s) => s.activate);
+  const setOpen = useTerminal((s) => s.setOpen);
+  const tab = tabs.find((t) => t.notificationId === n.meta?.orig_id);
+  if (!tab) return null;
+  return (
+    <Button
+      variant="secondary"
+      onClick={() => {
+        activate(tab.id);
+        setOpen(true);
+      }}
+    >
+      <TerminalSquare size={14} />
+      Open agent terminal
+    </Button>
+  );
+}
+
+/** Inline Linear actions: change state, assign to me, add a comment. */
+function LinearActions({ n }: { n: AppNotification }) {
+  const issueId = n.id.replace(/^lin:/, "");
+  const [teams, setTeams] = useState<LinearTeamMeta[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [comment, setComment] = useState("");
+
+  useEffect(() => {
+    linearMeta().then(setTeams).catch(() => setTeams([]));
+  }, []);
+
+  // States from the ticket's team; fall back to all teams' states.
+  const states = useMemo(() => {
+    const team = teams?.find((t) => t.name === n.meta?.team || t.key === n.meta?.team);
+    const nodes = team ? team.states.nodes : (teams ?? []).flatMap((t) => t.states.nodes);
+    const seen = new Set<string>();
+    return nodes
+      .sort((a, b) => a.position - b.position)
+      .filter((s) => (seen.has(s.name) ? false : (seen.add(s.name), true)));
+  }, [teams, n.meta?.team]);
+
+  const act = async (label: string, fn: () => Promise<void>, done: string) => {
+    if (busy) return;
+    setBusy(label);
+    setError(null);
+    setMsg(null);
+    try {
+      await fn();
+      setMsg(done);
+      void useSync.getState().sync(); // refresh the ticket's chips
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-line bg-surface p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value=""
+          onChange={(e) => {
+            const s = states.find((st) => st.id === e.target.value);
+            if (s) void act("state", () => linearUpdateIssue(issueId, s.id), `Moved to ${s.name} ✓`);
+          }}
+          disabled={!!busy || states.length === 0}
+          className="h-7.5 rounded-lg border border-line bg-surface-2 px-2 text-xs outline-none focus:border-accent disabled:opacity-50"
+        >
+          <option value="" disabled>
+            {busy === "state" ? "Updating…" : `Move to… (now: ${n.meta?.state ?? "?"})`}
+          </option>
+          {states.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={!!busy}
+          onClick={() =>
+            void act("assign", () => linearUpdateIssue(issueId, undefined, "me"), "Assigned to you ✓")
+          }
+        >
+          {busy === "assign" ? <Loader2 size={12} className="animate-spin" /> : <UserRoundPlus size={12} />}
+          Assign to me
+        </Button>
+        {msg && <span className="text-xs font-medium text-success">{msg}</span>}
+        {error && <span className="text-xs text-danger">{error}</span>}
+      </div>
+      <div className="mt-2 flex items-start gap-2">
+        <textarea
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          placeholder="Add a comment (markdown)…"
+          rows={1}
+          className="min-h-8 flex-1 resize-y rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-accent"
+        />
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={!!busy || !comment.trim()}
+          onClick={() =>
+            void act(
+              "comment",
+              async () => {
+                await linearAddComment(issueId, comment.trim());
+                setComment("");
+              },
+              "Comment posted ✓",
+            )
+          }
+        >
+          {busy === "comment" ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /** Full ticket body + latest comments, collapsible (Linear). */
 function LinearSections({ n }: { n: AppNotification }) {
   const description = n.meta?.description;
@@ -307,10 +619,10 @@ function LinearSections({ n }: { n: AppNotification }) {
   } catch {
     comments = [];
   }
-  if (!description && comments.length === 0) return null;
 
   return (
     <div className="mt-4 flex flex-col gap-2">
+      <LinearActions n={n} />
       {description && (
         <Collapsible title="Ticket description" defaultOpen>
           <Markdown className="text-[13px] leading-5.5">{description}</Markdown>

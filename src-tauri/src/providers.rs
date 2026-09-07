@@ -221,8 +221,57 @@ pub async fn linear_create_issue(
     crate::connectors::linear::create_issue(&token, issue).await
 }
 
+/// Submit a PR review from the detail pane. `event`: APPROVE | REQUEST_CHANGES | COMMENT.
+#[tauri::command]
+pub async fn github_pr_review(
+    repo: String,
+    number: i64,
+    event: String,
+    body: String,
+) -> Result<(), String> {
+    let token = crate::secrets::get(&token_key("github"))
+        .map_err(|e| e.to_string())?
+        .ok_or("GitHub is not connected")?;
+    crate::connectors::github::pr_review(&token, &repo, number, &event, &body).await
+}
+
+/// Merge a PR. `method`: merge | squash | rebase.
+#[tauri::command]
+pub async fn github_pr_merge(repo: String, number: i64, method: String) -> Result<(), String> {
+    let token = crate::secrets::get(&token_key("github"))
+        .map_err(|e| e.to_string())?
+        .ok_or("GitHub is not connected")?;
+    crate::connectors::github::pr_merge(&token, &repo, number, &method).await
+}
+
+/// Update a Linear issue's state and/or assignee. `assignee_id` accepts the
+/// literal "me" (resolved to the token owner).
+#[tauri::command]
+pub async fn linear_update_issue(
+    issue_id: String,
+    state_id: Option<String>,
+    assignee_id: Option<String>,
+) -> Result<(), String> {
+    let token = crate::secrets::get(&token_key("linear"))
+        .map_err(|e| e.to_string())?
+        .ok_or("Linear is not connected")?;
+    let assignee = match assignee_id.as_deref() {
+        Some("me") => Some(crate::connectors::linear::viewer_id(&token).await?),
+        other => other.map(String::from),
+    };
+    crate::connectors::linear::update_issue(&token, &issue_id, state_id, assignee).await
+}
+
+#[tauri::command]
+pub async fn linear_add_comment(issue_id: String, body: String) -> Result<(), String> {
+    let token = crate::secrets::get(&token_key("linear"))
+        .map_err(|e| e.to_string())?
+        .ok_or("Linear is not connected")?;
+    crate::connectors::linear::add_comment(&token, &issue_id, &body).await
+}
+
 /// Full PR context (description, branches, files changed with diffs) fetched
-/// on demand when a GitHub PR is opened in the detail pane.
+/// on demand when a PR is opened in the detail pane.
 #[tauri::command]
 pub async fn github_pr_detail(
     repo: String,
