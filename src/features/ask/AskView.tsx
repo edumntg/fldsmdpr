@@ -87,7 +87,7 @@ export function AskView() {
           {running && (
             <div className="flex items-center gap-2 text-[13px] text-src-agent">
               <Loader2 size={14} className="animate-spin" />
-              Reading your data… (~15 s)
+              Reading your data…
             </div>
           )}
           {error && <p className="text-xs text-danger">{error}</p>}
