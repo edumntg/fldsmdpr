@@ -21,6 +21,7 @@ import { AgentRunButton } from "../agents/AgentRunButton";
 import { AgentStatusPanel } from "../agents/AgentStatusRow";
 import { useAgents } from "../../stores/agents";
 import { Collapsible } from "../../components/ui/Collapsible";
+import { Markdown } from "../../components/ui/Markdown";
 import { LinearStateChip } from "../../components/ui/LinearStateChip";
 
 /** Agent actions offered per notification type (wired to real sessions in Phase 4). */
@@ -92,9 +93,7 @@ export function NotificationDetail() {
             </div>
           )}
 
-          <p className="mt-4 text-[13.5px] leading-6 whitespace-pre-wrap text-ink-2 select-text">
-            {n.snippet}
-          </p>
+          <Markdown className="mt-4">{n.snippet}</Markdown>
 
           {n.source === "linear" && <LinearSections n={n} />}
 
@@ -224,9 +223,7 @@ function PrSections({ n }: { n: AppNotification }) {
 
       {detail.body.trim() && (
         <Collapsible title="Description" defaultOpen>
-          <p className="text-[13px] leading-6 whitespace-pre-wrap text-ink-2 select-text">
-            {detail.body.trim()}
-          </p>
+          <Markdown className="text-[13px]">{detail.body.trim()}</Markdown>
         </Collapsible>
       )}
 
@@ -311,9 +308,7 @@ function LinearSections({ n }: { n: AppNotification }) {
     <div className="mt-4 flex flex-col gap-2">
       {description && (
         <Collapsible title="Ticket description" defaultOpen>
-          <p className="text-[13px] leading-5.5 whitespace-pre-wrap text-ink-2 select-text">
-            {description}
-          </p>
+          <Markdown className="text-[13px] leading-5.5">{description}</Markdown>
         </Collapsible>
       )}
       {comments.length > 0 && (
@@ -333,9 +328,7 @@ function LinearSections({ n }: { n: AppNotification }) {
                     </span>
                   )}
                 </div>
-                <p className="mt-1 text-[13px] leading-5 whitespace-pre-wrap text-ink-2 select-text">
-                  {c.body}
-                </p>
+                <Markdown className="mt-1 text-[13px] leading-5">{c.body}</Markdown>
               </div>
             ))}
           </div>
