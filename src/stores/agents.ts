@@ -47,7 +47,7 @@ interface AgentsState {
     n: AppNotification,
     label: string,
     runner: "orca" | "claude",
-    opts?: { repoId?: string; repoName?: string; cwd?: string },
+    opts?: { repoId?: string; repoName?: string; cwd?: string; extra?: string },
   ) => Promise<void>;
   setStatus: (notificationId: string, status: AgentStatus, detail?: string) => void;
   clear: (notificationId: string) => void;
@@ -97,7 +97,7 @@ export const useAgents = create<AgentsState>((set, get) => ({
       const cwd = opts?.cwd ?? (repo ? ((await repoLocalPath(repo)) ?? undefined) : undefined);
       useTerminal.getState().openClaude({
         cwd,
-        prompt: buildAgentPrompt(n, label),
+        prompt: buildAgentPrompt(n, label, opts?.extra),
         title: `claude · ${n.meta?.number ?? n.meta?.key ?? repo ?? "task"}`,
         notificationId: n.id,
         runId: run.id,
@@ -119,7 +119,7 @@ export const useAgents = create<AgentsState>((set, get) => ({
       const res = await launchOrca({
         name: worktreeName(n),
         repo: repo ?? "",
-        prompt: buildAgentPrompt(n, label),
+        prompt: buildAgentPrompt(n, label, opts?.extra),
         comment: n.url,
         repoId: opts?.repoId,
       });

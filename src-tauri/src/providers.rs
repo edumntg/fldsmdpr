@@ -190,6 +190,37 @@ pub struct SyncResult {
     pub errors: Vec<String>,
 }
 
+/// Full Sentry issue context (stack trace, tags) for the detail pane and the
+/// fix-agent prompt. `issue_id` is the bare Sentry id (no "sentry:" prefix).
+#[tauri::command]
+pub async fn sentry_issue_detail(
+    issue_id: String,
+) -> Result<crate::connectors::sentry::SentryIssueDetail, String> {
+    let token = crate::secrets::get(&token_key("sentry"))
+        .map_err(|e| e.to_string())?
+        .ok_or("Sentry is not connected")?;
+    crate::connectors::sentry::issue_detail(&token, &issue_id).await
+}
+
+/// Linear teams + states/projects/members for the create-ticket form.
+#[tauri::command]
+pub async fn linear_meta() -> Result<serde_json::Value, String> {
+    let token = crate::secrets::get(&token_key("linear"))
+        .map_err(|e| e.to_string())?
+        .ok_or("Linear is not connected")?;
+    crate::connectors::linear::meta(&token).await
+}
+
+#[tauri::command]
+pub async fn linear_create_issue(
+    issue: crate::connectors::linear::NewIssue,
+) -> Result<serde_json::Value, String> {
+    let token = crate::secrets::get(&token_key("linear"))
+        .map_err(|e| e.to_string())?
+        .ok_or("Linear is not connected")?;
+    crate::connectors::linear::create_issue(&token, issue).await
+}
+
 /// Full PR context (description, branches, files changed with diffs) fetched
 /// on demand when a GitHub PR is opened in the detail pane.
 #[tauri::command]

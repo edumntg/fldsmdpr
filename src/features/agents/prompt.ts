@@ -1,5 +1,11 @@
 import type { AppNotification } from "../../lib/types";
 
+/** Rich context loaded lazily by detail panes (e.g. a Sentry stack trace),
+ * keyed by notification id, appended to agent prompts when available. */
+const promptContext = new Map<string, string>();
+export const setPromptContext = (id: string, ctx: string) => promptContext.set(id, ctx);
+export const getPromptContext = (id: string) => promptContext.get(id);
+
 /**
  * Specialized high-quality reviewer prompt for PR reviews. Deliberately
  * adversarial ("assume there ARE bugs") — models hunt much harder when told
@@ -30,25 +36,34 @@ export function buildReviewPrompt(n: AppNotification): string {
     .join("\n");
 }
 
-/** Builds the initial agent prompt for a notification (context builder v0). */
-export function buildAgentPrompt(n: AppNotification, action: string): string {
+/** Builds the initial agent prompt for a notification (context builder v0).
+ * `extra` is appended verbatim (e.g. the Linear ticket just created for it). */
+export function buildAgentPrompt(n: AppNotification, action: string, extra?: string): string {
   // PR reviews get the specialized adversarial reviewer instructions.
   if (/review/i.test(action) && (n.type === "pr_review" || n.meta?.is_pr === "true")) {
     return buildReviewPrompt(n);
   }
+  const rich = promptContext.get(n.id);
   const lines = [
     `Task: ${action}`,
     "",
     `Title: ${n.title}`,
     n.meta?.repo ? `Repository: ${n.meta.repo}` : null,
+    n.meta?.project ? `Project: ${n.meta.project}` : null,
     n.meta?.number ? `Reference: ${n.meta.number}` : null,
     n.url ? `URL: ${n.url}` : null,
     "",
     "Context:",
     n.snippet,
+    rich ? "" : null,
+    rich ?? null,
+    extra ? "" : null,
+    extra ?? null,
     "",
-    "Use the gh CLI to pull any extra context you need (diff, comments, CI logs). " +
-      "Work incrementally and explain what you changed when done.",
+    n.source === "sentry"
+      ? "Find the root cause in the codebase using the stack trace above, implement the minimal fix, and explain it. Add a regression test if the project has tests."
+      : "Use the gh CLI to pull any extra context you need (diff, comments, CI logs). " +
+        "Work incrementally and explain what you changed when done.",
   ];
   return lines.filter((l) => l !== null).join("\n");
 }

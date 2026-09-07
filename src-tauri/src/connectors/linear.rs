@@ -196,3 +196,112 @@ pub async fn fetch(token: &str) -> Result<Vec<Fetched>, String> {
 
     Ok(out)
 }
+
+// ---- Ticket creation (from Sentry incidents / Slack tasks) ----
+
+const META_QUERY: &str = "
+{
+  teams(first: 50) {
+    nodes {
+      id
+      name
+      key
+      states { nodes { id name type position } }
+      projects(first: 50) { nodes { id name } }
+      members(first: 50) { nodes { id name displayName } }
+    }
+  }
+}";
+
+/// Teams with their workflow states, projects and members — everything the
+/// create-ticket form needs, in one query.
+pub async fn meta(token: &str) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("fldsmdpr/0.1")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client
+        .post("https://api.linear.app/graphql")
+        .header("Authorization", token)
+        .json(&json!({ "query": META_QUERY }))
+        .send()
+        .await
+        .map_err(|e| format!("Linear request failed: {e}"))?;
+    if !res.status().is_success() {
+        return Err(format!("Linear meta failed (HTTP {})", res.status()));
+    }
+    let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    if let Some(err) = body["errors"].as_array().and_then(|e| e.first()) {
+        return Err(err["message"]
+            .as_str()
+            .unwrap_or("GraphQL error")
+            .to_string());
+    }
+    Ok(body["data"]["teams"]["nodes"].clone())
+}
+
+#[derive(serde::Deserialize)]
+pub struct NewIssue {
+    pub team_id: String,
+    pub title: String,
+    pub description: String,
+    pub project_id: Option<String>,
+    pub assignee_id: Option<String>,
+    pub state_id: Option<String>,
+    /// 0 none, 1 urgent, 2 high, 3 normal, 4 low (Linear's scale).
+    pub priority: Option<i64>,
+    /// ISO date "YYYY-MM-DD".
+    pub due_date: Option<String>,
+}
+
+/// Creates the issue; returns { identifier, url, title }.
+pub async fn create_issue(token: &str, issue: NewIssue) -> Result<serde_json::Value, String> {
+    let mut input = serde_json::Map::new();
+    input.insert("teamId".into(), json!(issue.team_id));
+    input.insert("title".into(), json!(issue.title));
+    input.insert("description".into(), json!(issue.description));
+    if let Some(v) = issue.project_id.filter(|s| !s.is_empty()) {
+        input.insert("projectId".into(), json!(v));
+    }
+    if let Some(v) = issue.assignee_id.filter(|s| !s.is_empty()) {
+        input.insert("assigneeId".into(), json!(v));
+    }
+    if let Some(v) = issue.state_id.filter(|s| !s.is_empty()) {
+        input.insert("stateId".into(), json!(v));
+    }
+    if let Some(v) = issue.priority {
+        input.insert("priority".into(), json!(v));
+    }
+    if let Some(v) = issue.due_date.filter(|s| !s.is_empty()) {
+        input.insert("dueDate".into(), json!(v));
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent("fldsmdpr/0.1")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client
+        .post("https://api.linear.app/graphql")
+        .header("Authorization", token)
+        .json(&json!({
+            "query": "mutation($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { identifier url title } } }",
+            "variables": { "input": input }
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Linear request failed: {e}"))?;
+    if !res.status().is_success() {
+        return Err(format!("Linear create failed (HTTP {})", res.status()));
+    }
+    let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    if let Some(err) = body["errors"].as_array().and_then(|e| e.first()) {
+        return Err(err["message"]
+            .as_str()
+            .unwrap_or("GraphQL error")
+            .to_string());
+    }
+    if body["data"]["issueCreate"]["success"].as_bool() != Some(true) {
+        return Err("Linear rejected the issue".into());
+    }
+    Ok(body["data"]["issueCreate"]["issue"].clone())
+}

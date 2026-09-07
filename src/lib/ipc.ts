@@ -224,6 +224,120 @@ export async function githubPrDetail(repo: string, number: number): Promise<PrDe
   return invoke<PrDetail>("github_pr_detail", { repo, number });
 }
 
+// ---- Sentry issue detail ----
+
+export interface SentryFrame {
+  function: string;
+  file: string;
+  line: number;
+  in_app: boolean;
+  code: string | null;
+}
+
+export interface SentryIssueDetail {
+  culprit: string;
+  level: string;
+  status: string;
+  count: string;
+  user_count: number;
+  first_seen: string;
+  last_seen: string;
+  project: string;
+  permalink: string;
+  exception_type: string;
+  exception_value: string;
+  frames: SentryFrame[];
+  tags: [string, string][];
+  message: string;
+}
+
+export async function sentryIssueDetail(issueId: string): Promise<SentryIssueDetail> {
+  if (!inTauri) {
+    return {
+      culprit: "api.payments.webhook",
+      level: "error",
+      status: "unresolved",
+      count: "142",
+      user_count: 37,
+      first_seen: new Date(Date.now() - 86400_000).toISOString(),
+      last_seen: new Date().toISOString(),
+      project: "core-api",
+      permalink: "https://sentry.io/example",
+      exception_type: "TypeError",
+      exception_value: "Cannot read properties of undefined (reading 'amount')",
+      message: "",
+      tags: [
+        ["environment", "production"],
+        ["release", "v2.41.0"],
+      ],
+      frames: [
+        {
+          function: "handleWebhook",
+          file: "src/payments/webhook.ts",
+          line: 84,
+          in_app: true,
+          code: "    82  const payload = parse(req.body);\n    83  const order = payload.order;\n→   84  charge(order.amount);",
+        },
+      ],
+    };
+  }
+  return invoke<SentryIssueDetail>("sentry_issue_detail", { issueId });
+}
+
+// ---- Linear ticket creation ----
+
+export interface LinearTeamMeta {
+  id: string;
+  name: string;
+  key: string;
+  states: { nodes: { id: string; name: string; type: string; position: number }[] };
+  projects: { nodes: { id: string; name: string }[] };
+  members: { nodes: { id: string; name: string; displayName: string }[] };
+}
+
+export async function linearMeta(): Promise<LinearTeamMeta[]> {
+  if (!inTauri) {
+    return [
+      {
+        id: "t1",
+        name: "Platform",
+        key: "PLA",
+        states: {
+          nodes: [
+            { id: "s1", name: "Backlog", type: "backlog", position: 0 },
+            { id: "s2", name: "Todo", type: "unstarted", position: 1 },
+            { id: "s3", name: "In Progress", type: "started", position: 2 },
+          ],
+        },
+        projects: { nodes: [{ id: "p1", name: "Reliability" }] },
+        members: { nodes: [{ id: "u1", name: "eduardo", displayName: "Eduardo" }] },
+      },
+    ];
+  }
+  return invoke<LinearTeamMeta[]>("linear_meta");
+}
+
+export interface NewLinearIssue {
+  team_id: string;
+  title: string;
+  description: string;
+  project_id?: string;
+  assignee_id?: string;
+  state_id?: string;
+  priority?: number;
+  due_date?: string;
+}
+
+export async function linearCreateIssue(
+  issue: NewLinearIssue,
+): Promise<{ identifier: string; url: string; title: string }> {
+  if (!inTauri) {
+    await new Promise((r) => setTimeout(r, 500));
+    return { identifier: "PLA-999", url: "https://linear.app/example", title: issue.title };
+  }
+  return invoke("linear_create_issue", { issue });
+}
+
 // ---- AI sources (Notion / Granola via claude rounds) ----
 
 export interface AiSourceStatus {

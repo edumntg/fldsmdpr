@@ -22,6 +22,8 @@ import { AgentStatusPanel } from "../agents/AgentStatusRow";
 import { useAgents } from "../../stores/agents";
 import { Collapsible } from "../../components/ui/Collapsible";
 import { Markdown } from "../../components/ui/Markdown";
+import { SentrySections } from "./SentrySections";
+import { CreateTicketButton } from "./CreateTicketModal";
 import { LinearStateChip } from "../../components/ui/LinearStateChip";
 
 /** Agent actions offered per notification type (wired to real sessions in Phase 4). */
@@ -99,12 +101,15 @@ export function NotificationDetail() {
 
           {n.source === "github" && n.meta?.is_pr !== "false" && <PrSections n={n} />}
 
+          {n.source === "sentry" && <SentrySections n={n} />}
+
           {agentRun && <AgentStatusPanel run={agentRun} />}
 
           <div className="mt-6 flex flex-wrap items-start gap-2 border-t border-line pt-4">
             {actions.map(({ label, icon }) => (
               <AgentRunButton key={label} n={n} label={label} icon={icon} />
             ))}
+            {(n.source === "sentry" || n.source === "slack") && <CreateTicketButton n={n} />}
             {n.url && (
               <Button
                 variant={n.source === "gcal" ? "primary" : "secondary"}
