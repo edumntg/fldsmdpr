@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { AppNotification } from "../lib/types";
-import { launchOrca, agentSessionUpsert, agentNotify } from "../lib/ipc";
+import { launchOrca, agentSessionUpsert, agentNotify, kvGet } from "../lib/ipc";
+import { DEFAULT_AGENT_MODEL } from "../lib/models";
 import { useInbox } from "./inbox";
 import { repoLocalPath } from "../lib/pty";
 import { useTerminal } from "./terminal";
@@ -48,7 +49,7 @@ interface AgentsState {
     n: AppNotification,
     label: string,
     runner: "orca" | "claude",
-    opts?: { repoId?: string; repoName?: string; cwd?: string; extra?: string },
+    opts?: { repoId?: string; repoName?: string; cwd?: string; extra?: string; model?: string },
   ) => Promise<void>;
   setStatus: (notificationId: string, status: AgentStatus, detail?: string) => void;
   clear: (notificationId: string) => void;
@@ -114,12 +115,16 @@ export const useAgents = create<AgentsState>((set, get) => ({
 
     if (runner === "claude") {
       const cwd = opts?.cwd ?? (repo ? ((await repoLocalPath(repo)) ?? undefined) : undefined);
+      // Model: explicit pick > last saved choice > Fable 5.
+      const model =
+        opts?.model ?? (await kvGet("agent_model").catch(() => null)) ?? DEFAULT_AGENT_MODEL;
       useTerminal.getState().openClaude({
         cwd,
         prompt: buildAgentPrompt(n, label, opts?.extra),
         title: `claude · ${n.meta?.number ?? n.meta?.key ?? repo ?? "task"}`,
         notificationId: n.id,
         runId: run.id,
+        model,
       });
       get().setStatus(
         n.id,

@@ -94,7 +94,13 @@ export function XtermView({ tab, active }: { tab: TermTab; active: boolean }) {
         id = await ptySpawn({
           cwd: tab.cwd,
           program: tab.kind === "claude" ? "claude" : undefined,
-          args: tab.kind === "claude" && tab.seedPrompt ? [tab.seedPrompt] : undefined,
+          args:
+            tab.kind === "claude"
+              ? [
+                  ...(tab.model ? ["--model", tab.model] : []),
+                  ...(tab.seedPrompt ? [tab.seedPrompt] : []),
+                ]
+              : undefined,
           hooks: tab.kind === "claude" && !!tab.notificationId,
           rows: term.rows,
           cols: term.cols,

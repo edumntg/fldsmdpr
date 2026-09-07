@@ -11,7 +11,8 @@ import {
   Check,
 } from "lucide-react";
 import type { AppNotification } from "../../lib/types";
-import { orcaStatus, orcaRepos, type OrcaRepo } from "../../lib/ipc";
+import { orcaStatus, orcaRepos, kvGet, kvSet, type OrcaRepo } from "../../lib/ipc";
+import { AGENT_MODELS, DEFAULT_AGENT_MODEL } from "../../lib/models";
 import { pickFolder } from "../../lib/pty";
 import { useAgents, isActive } from "../../stores/agents";
 import { AgentStatusRow } from "./AgentStatusRow";
@@ -39,6 +40,7 @@ function AgentRunnerMenu({
   onClose: () => void;
 }) {
   const [view, setView] = useState<MenuView>(initialView);
+  const [model, setModel] = useState(DEFAULT_AGENT_MODEL);
   const [orcaInstalled, setOrcaInstalled] = useState(false);
   const [repos, setRepos] = useState<OrcaRepo[] | null>(null);
   const [loadingRepos, setLoadingRepos] = useState(false);
@@ -48,7 +50,13 @@ function AgentRunnerMenu({
 
   useEffect(() => {
     void orcaStatus().then((s) => setOrcaInstalled(s.installed));
+    void kvGet("agent_model").then((m) => m && setModel(m));
   }, []);
+
+  const pickModel = (m: string) => {
+    setModel(m);
+    void kvSet("agent_model", m); // remembered as the default for next runs
+  };
 
   // The menu is portaled to <body>, so close-on-outside-click lives here
   // (clicks on the anchor toggle it from the trigger instead).
@@ -105,7 +113,7 @@ function AgentRunnerMenu({
   };
   const runClaude = (cwd: string) => {
     onClose();
-    void launch(n, label, "claude", { cwd });
+    void launch(n, label, "claude", { cwd, model });
   };
   const browseAndRun = async () => {
     const folder = await pickFolder();
@@ -188,6 +196,20 @@ function AgentRunnerMenu({
 
           {view === "claude-folder" && (
             <>
+              <label className="mb-1.5 flex items-center gap-2 px-1.5">
+                <span className="text-[11px] font-medium text-ink-3">Model</span>
+                <select
+                  value={model}
+                  onChange={(e) => pickModel(e.target.value)}
+                  className="h-7 flex-1 rounded-lg border border-line bg-surface px-2 text-xs outline-none focus:border-accent"
+                >
+                  {AGENT_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {repoList((r) => runClaude(r.path), (r) => r.path)}
               <button
                 onClick={() => void browseAndRun()}
