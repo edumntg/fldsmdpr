@@ -89,6 +89,23 @@ pub async fn list_channels(auth: &SlackAuth) -> Result<Vec<(String, String)>, St
     Ok(out)
 }
 
+/// Resolves a channel id to its "#name" (best effort — falls back to the id if
+/// conversations.info is also enterprise-restricted).
+pub async fn channel_name(auth: &SlackAuth, channel_id: &str) -> Result<String, String> {
+    let client = client()?;
+    let body = api(
+        &client,
+        auth,
+        "conversations.info",
+        &[("channel", channel_id)],
+    )
+    .await?;
+    Ok(body["channel"]["name"]
+        .as_str()
+        .map(|n| format!("#{n}"))
+        .unwrap_or_else(|| channel_id.to_string()))
+}
+
 /// Fetches recent messages from opted-in channels and emits a notification for
 /// each one that explicitly @-mentions the authed user. Implicit / AI-inferred
 /// detection is layered on next (triage pipeline).

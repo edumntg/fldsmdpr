@@ -112,6 +112,14 @@ export async function slackListChannels(): Promise<SlackChannel[]> {
   return invoke<SlackChannel[]>("slack_list_channels");
 }
 
+export async function slackResolveChannel(idOrUrl: string): Promise<SlackChannel> {
+  if (!inTauri) {
+    const id = (idOrUrl.match(/[CGD][A-Z0-9]{6,}/) ?? ["C0PREVIEW"])[0];
+    return { id, name: `#${id.toLowerCase()}` };
+  }
+  return invoke<SlackChannel>("slack_resolve_channel", { idOrUrl });
+}
+
 export async function slackGetChannels(): Promise<SlackChannel[]> {
   if (!inTauri) return [];
   return invoke<SlackChannel[]>("slack_get_channels");

@@ -43,6 +43,7 @@ pub fn run() {
             agents::launch_orca,
             slack::slack_connect,
             slack::slack_list_channels,
+            slack::slack_resolve_channel,
             slack::slack_get_channels,
             slack::slack_set_channels,
         ])

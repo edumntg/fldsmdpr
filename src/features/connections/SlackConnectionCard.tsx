@@ -7,12 +7,15 @@ import {
   CheckCircle2,
   Hash,
   RefreshCw,
+  Plus,
+  X,
 } from "lucide-react";
 import { providerMeta } from "./providerMeta";
 import { useConnections } from "../../stores/connections";
 import {
   slackConnect,
   slackListChannels,
+  slackResolveChannel,
   slackGetChannels,
   slackSetChannels,
   type SlackChannel,
@@ -191,20 +194,23 @@ export function SlackConnectionCard({ defaultExpanded = false }: { defaultExpand
 
 function ChannelPicker() {
   const [all, setAll] = useState<SlackChannel[] | null>(null);
-  const [selected, setSelected] = useState<Record<string, string>>({});
+  const [opted, setOpted] = useState<SlackChannel[]>([]);
+  const [listErr, setListErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [manual, setManual] = useState("");
+  const [addErr, setAddErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const load = async () => {
     setLoading(true);
-    setError(null);
+    setListErr(null);
+    setOpted(await slackGetChannels());
     try {
-      const [channels, opted] = await Promise.all([slackListChannels(), slackGetChannels()]);
-      setAll(channels);
-      setSelected(Object.fromEntries(opted.map((c) => [c.id, c.name])));
+      setAll(await slackListChannels());
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      // enterprise_is_restricted etc. — fall back to manual entry.
+      setAll(null);
+      setListErr(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
@@ -214,19 +220,31 @@ function ChannelPicker() {
     void load();
   }, []);
 
-  const toggle = (c: SlackChannel) => {
-    setSaved(false);
-    setSelected((prev) => {
-      const next = { ...prev };
-      if (next[c.id]) delete next[c.id];
-      else next[c.id] = c.name;
-      return next;
-    });
+  const persist = async (next: SlackChannel[]) => {
+    setOpted(next);
+    await slackSetChannels(next);
   };
 
-  const save = async () => {
-    await slackSetChannels(Object.entries(selected).map(([id, name]) => ({ id, name })));
-    setSaved(true);
+  const isOpted = (id: string) => opted.some((c) => c.id === id);
+
+  const toggle = (c: SlackChannel) =>
+    persist(isOpted(c.id) ? opted.filter((x) => x.id !== c.id) : [...opted, c]);
+
+  const remove = (id: string) => persist(opted.filter((c) => c.id !== id));
+
+  const addManual = async () => {
+    if (!manual.trim()) return;
+    setBusy(true);
+    setAddErr(null);
+    try {
+      const ch = await slackResolveChannel(manual.trim());
+      if (!isOpted(ch.id)) await persist([...opted, ch]);
+      setManual("");
+    } catch (e) {
+      setAddErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -242,39 +260,77 @@ function ChannelPicker() {
         </button>
       </div>
 
-      {loading && !all && <p className="py-3 text-xs text-ink-3">Loading channels…</p>}
-      {error && <p className="py-2 text-xs text-danger">{error}</p>}
+      {loading && !all && !listErr && <p className="py-3 text-xs text-ink-3">Loading channels…</p>}
 
+      {/* Full channel list when the org allows it. */}
       {all && (
-        <>
-          <div className="max-h-56 overflow-y-auto rounded-xl border border-line">
-            {all.map((c) => (
-              <label
-                key={c.id}
-                className="flex cursor-default items-center gap-2.5 border-b border-line px-3 py-2 last:border-0 hover:bg-surface-3"
-              >
-                <input
-                  type="checkbox"
-                  checked={!!selected[c.id]}
-                  onChange={() => toggle(c)}
-                  className="size-3.5 accent-accent"
-                />
-                <Hash size={12} className="text-ink-3" />
-                <span className="text-[13px]">{c.name.replace(/^#/, "")}</span>
-              </label>
-            ))}
-          </div>
-          <div className="mt-3 flex items-center gap-2">
-            <Button variant="primary" size="sm" onClick={() => void save()}>
-              Save channels
-            </Button>
-            <span className="text-xs text-ink-3">
-              {Object.keys(selected).length} selected
-              {saved && " · saved"}
-            </span>
-          </div>
-        </>
+        <div className="max-h-56 overflow-y-auto rounded-xl border border-line">
+          {all.map((c) => (
+            <label
+              key={c.id}
+              className="flex cursor-default items-center gap-2.5 border-b border-line px-3 py-2 last:border-0 hover:bg-surface-3"
+            >
+              <input
+                type="checkbox"
+                checked={isOpted(c.id)}
+                onChange={() => void toggle(c)}
+                className="size-3.5 accent-accent"
+              />
+              <Hash size={12} className="text-ink-3" />
+              <span className="text-[13px]">{c.name.replace(/^#/, "")}</span>
+            </label>
+          ))}
+        </div>
       )}
+
+      {/* Manual entry when listing is enterprise-restricted. */}
+      {listErr && (
+        <div className="rounded-xl bg-warning/8 p-3">
+          <p className="text-xs text-ink-2">
+            Your org restricts channel listing, so add channels by hand: in Slack open a channel →
+            its name → <span className="font-medium">Copy link</span>, and paste it here.
+          </p>
+          <div className="mt-2.5 flex gap-2">
+            <input
+              value={manual}
+              onChange={(e) => setManual(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !busy && void addManual()}
+              placeholder="Paste channel link or ID (C0…)"
+              className="h-8 flex-1 rounded-lg border border-line bg-surface px-2.5 text-xs text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+            />
+            <Button size="sm" variant="primary" disabled={!manual.trim() || busy} onClick={() => void addManual()}>
+              {busy ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+              Add
+            </Button>
+          </div>
+          {addErr && <p className="mt-1.5 text-xs text-danger">{addErr}</p>}
+        </div>
+      )}
+
+      {/* Currently-watched channels (works in both modes). */}
+      {opted.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {opted.map((c) => (
+            <span
+              key={c.id}
+              className="inline-flex items-center gap-1 rounded-pill bg-surface-3 px-2 py-1 text-[11.5px] text-ink-2"
+            >
+              <Hash size={10} className="text-ink-3" />
+              {c.name.replace(/^#/, "")}
+              <button
+                onClick={() => void remove(c.id)}
+                className="cursor-default text-ink-3 hover:text-danger"
+                aria-label={`Stop watching ${c.name}`}
+              >
+                <X size={11} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <p className="mt-2 text-[11px] text-ink-3">
+        {opted.length} channel{opted.length === 1 ? "" : "s"} watched · saved automatically
+      </p>
     </div>
   );
 }

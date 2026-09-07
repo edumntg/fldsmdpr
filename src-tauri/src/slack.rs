@@ -82,6 +82,47 @@ pub async fn slack_list_channels() -> Result<Vec<SlackChannel>, String> {
         .collect())
 }
 
+/// Resolves a pasted channel link or bare ID to {id, name}. Used when the org
+/// restricts users.conversations (enterprise_is_restricted) so the user can add
+/// channels manually instead of picking from a list.
+#[tauri::command]
+pub async fn slack_resolve_channel(id_or_url: String) -> Result<SlackChannel, String> {
+    let auth = load_auth()?.ok_or("Slack isn't connected")?;
+    let id = extract_channel_id(&id_or_url)
+        .ok_or("Paste a channel link (Slack → channel → Copy link) or an ID like C0ABC123.")?;
+    let name = slack::channel_name(&auth, &id)
+        .await
+        .unwrap_or_else(|_| id.clone());
+    Ok(SlackChannel { id, name })
+}
+
+fn extract_channel_id(s: &str) -> Option<String> {
+    let s = s.trim();
+    // From a message/channel link: .../archives/C0ABC123[/p...]
+    if let Some(pos) = s.find("/archives/") {
+        let id: String = s[pos + "/archives/".len()..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .collect();
+        if is_channel_id(&id) {
+            return Some(id);
+        }
+    }
+    // A bare id pasted directly.
+    let bare: String = s
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric())
+        .collect();
+    if is_channel_id(&bare) {
+        return Some(bare);
+    }
+    None
+}
+
+fn is_channel_id(s: &str) -> bool {
+    s.len() >= 7 && matches!(s.chars().next(), Some('C' | 'G' | 'D'))
+}
+
 #[tauri::command]
 pub fn slack_get_channels(db: State<AppDb>) -> Result<Vec<SlackChannel>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
