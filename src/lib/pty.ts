@@ -71,3 +71,11 @@ export async function repoLocalPath(repo: string): Promise<string | null> {
   if (!inTauri) return null;
   return invoke<string | null>("repo_local_path", { repo });
 }
+
+/** Native folder picker (for choosing the repo dir a Claude agent works in). */
+export async function pickFolder(): Promise<string | null> {
+  if (!inTauri) return "/Users/you/dev/example-repo"; // browser preview
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const picked = await open({ directory: true, multiple: false, title: "Choose the repo folder" });
+  return typeof picked === "string" ? picked : null;
+}

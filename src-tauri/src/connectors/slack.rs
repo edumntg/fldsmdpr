@@ -157,10 +157,11 @@ fn build_prompt(about_me: &str) -> String {
          2) SUMMARIES — a concise summary of the LAST 24 HOURS (\"daySummary\") and of the LAST 7 DAYS MAX (\"weekSummary\") across the channels and DMs relevant to me: key themes, decisions made, and things awaiting my follow-up. Do NOT read messages older than 7 days.\n\n\
          My profile: {profile}\n\n\
          Respond with ONLY a JSON object as the final content:\n\
-         {{\"items\":[{{\"channel\":\"\",\"from\":\"\",\"text\":\"\",\"ts\":\"\",\"permalink\":\"\",\"kind\":\"explicit\",\"reason\":\"\"}}],\"daySummary\":\"\",\"weekSummary\":\"\"}}\n\
+         {{\"items\":[{{\"channel\":\"\",\"from\":\"\",\"text\":\"\",\"ts\":\"\",\"permalink\":\"\",\"kind\":\"explicit\",\"reason\":\"\"}}],\
+\"daySummary\":[{{\"text\":\"\",\"channel\":\"\",\"actionable\":false}}],\"weekSummary\":[{{\"text\":\"\",\"channel\":\"\",\"actionable\":false}}]}}\n\
          - items: last 24h only. \"kind\" is \"explicit\" for @mentions/DMs/thread replies, or \"implicit\" for inferred relevance (short justification in \"reason\"). \"text\" trimmed ~200 chars. \"ts\" = Slack message timestamp. Skip bots. Max 25 items.\n\
-         - daySummary / weekSummary: 2-5 concise sentences each; you may use \"- \" bullet lines. If nothing notable, say so briefly.\n\
-         If Slack is unavailable, return {{\"items\":[],\"daySummary\":\"\",\"weekSummary\":\"\"}}."
+         - daySummary: 3-8 granular, self-contained bullet items covering the last 24h. weekSummary: 3-10 items covering the last 7 days max (themes, decisions, pending follow-ups). Each item: \"text\" (1-2 sentences), \"channel\" where it happened, and \"actionable\": true ONLY if it describes concrete work I could delegate to a coding agent (a bug, fix request, code task) — false for FYI/decisions/social.\n\
+         If nothing notable, return one item saying so. If Slack is unavailable, return {{\"items\":[],\"daySummary\":[],\"weekSummary\":[]}}."
     )
 }
 
@@ -216,8 +217,10 @@ pub fn fetch_via_claude(about_me: &str) -> Result<SlackAiResult, String> {
         .ok_or("Claude didn't return a JSON object (Slack may be unavailable).")?;
     let obj: Value = serde_json::from_str(obj_str).map_err(|e| e.to_string())?;
 
-    let day_summary = obj["daySummary"].as_str().unwrap_or("").to_string();
-    let week_summary = obj["weekSummary"].as_str().unwrap_or("").to_string();
+    // Summaries are stored as JSON (array of granular items; older runs may have
+    // produced a plain string — the frontend handles both).
+    let day_summary = serde_json::to_string(&obj["daySummary"]).unwrap_or_default();
+    let week_summary = serde_json::to_string(&obj["weekSummary"]).unwrap_or_default();
     let items = obj["items"].as_array().cloned().unwrap_or_default();
 
     let mut out_items = Vec::new();

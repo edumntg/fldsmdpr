@@ -25,7 +25,7 @@ interface AgentsState {
     n: AppNotification,
     label: string,
     runner: "orca" | "claude",
-    opts?: { repoId?: string; repoName?: string },
+    opts?: { repoId?: string; repoName?: string; cwd?: string },
   ) => Promise<void>;
   setStatus: (notificationId: string, status: AgentStatus, detail?: string) => void;
   clear: (notificationId: string) => void;
@@ -68,7 +68,7 @@ export const useAgents = create<AgentsState>((set, get) => ({
     }));
 
     if (runner === "claude") {
-      const cwd = repo ? ((await repoLocalPath(repo)) ?? undefined) : undefined;
+      const cwd = opts?.cwd ?? (repo ? ((await repoLocalPath(repo)) ?? undefined) : undefined);
       useTerminal.getState().openClaude({
         cwd,
         prompt: buildAgentPrompt(n, label),

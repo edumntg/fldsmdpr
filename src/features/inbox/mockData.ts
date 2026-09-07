@@ -58,7 +58,21 @@ export const mockNotifications: AppNotification[] = [
     createdAt: now - 5 * hour,
     priority: 75,
     state: "unread",
-    meta: { key: "PLA-341", priority: "Urgent", cycle: "Cycle 14" },
+    meta: {
+      key: "PLA-341",
+      priority: "Urgent",
+      cycle: "Cycle 14",
+      state: "In Progress",
+      state_type: "started",
+      state_color: "#f2c94c",
+      team: "Platform",
+      description:
+        "## Problem\nWhen a GitHub token expires mid-sync, the worker retries immediately in a tight loop, hammering the API until the rate limit trips.\n\n## Proposal\n- Exponential backoff with jitter\n- Circuit breaker after 5 consecutive failures\n- Surface a 'reconnect GitHub' notification instead of silent retries",
+      comments: JSON.stringify([
+        { author: "Dan R.", body: "Seeing this in prod too — the retry storm took us to 100% of the rate limit twice today.", at: new Date(now - 3 * hour).toISOString() },
+        { author: "Sarah K.", body: "+1, let's prioritize. Backoff params: base 2s, cap 5m?", at: new Date(now - 1 * hour).toISOString() },
+      ]),
+    },
   },
   {
     id: "n5",

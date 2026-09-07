@@ -19,10 +19,17 @@ const QUERY: &str = "
         updatedAt
         priority
         priorityLabel
-        state { name }
+        state { name type color }
         team { key name }
         cycle { number }
         project { name lead { displayName } }
+        comments(last: 3) {
+          nodes {
+            body
+            createdAt
+            user { displayName }
+          }
+        }
       }
     }
   }
@@ -120,6 +127,36 @@ pub async fn fetch(token: &str) -> Result<Vec<Fetched>, String> {
         }
         if !state_name.is_empty() {
             meta.insert("state".into(), state_name.to_string());
+        }
+        if let Some(t) = issue["state"]["type"].as_str() {
+            meta.insert("state_type".into(), t.to_string());
+        }
+        if let Some(c) = issue["state"]["color"].as_str() {
+            meta.insert("state_color".into(), c.to_string());
+        }
+        // Full ticket body for the detail pane (snippet stays truncated).
+        if let Some(full) = issue["description"].as_str() {
+            if !full.trim().is_empty() {
+                meta.insert("description".into(), full.chars().take(6000).collect());
+            }
+        }
+        // Latest comments, serialized for the detail pane.
+        if let Some(nodes) = issue["comments"]["nodes"].as_array() {
+            let comments: Vec<serde_json::Value> = nodes
+                .iter()
+                .map(|c| {
+                    serde_json::json!({
+                        "author": c["user"]["displayName"].as_str().unwrap_or("Someone"),
+                        "body": c["body"].as_str().unwrap_or("").chars().take(600).collect::<String>(),
+                        "at": c["createdAt"].as_str().unwrap_or(""),
+                    })
+                })
+                .collect();
+            if !comments.is_empty() {
+                if let Ok(json) = serde_json::to_string(&comments) {
+                    meta.insert("comments".into(), json);
+                }
+            }
         }
         if let Some(c) = cycle {
             meta.insert("cycle".into(), format!("Cycle {c}"));

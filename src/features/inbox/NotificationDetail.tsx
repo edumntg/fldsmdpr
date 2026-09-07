@@ -18,6 +18,8 @@ import { SourceBadge, sourceLabel } from "../../components/ui/SourceBadge";
 import { AgentRunButton } from "../agents/AgentRunButton";
 import { AgentStatusPanel } from "../agents/AgentStatusRow";
 import { useAgents } from "../../stores/agents";
+import { Collapsible } from "../../components/ui/Collapsible";
+import { LinearStateChip } from "../../components/ui/LinearStateChip";
 
 /** Agent actions offered per notification type (wired to real sessions in Phase 4). */
 function agentActions(n: AppNotification): { label: string; icon: typeof Bot }[] {
@@ -69,6 +71,8 @@ export function NotificationDetail() {
                 {n.meta?.from && <span>· from {n.meta.from}</span>}
                 {n.meta?.repo && <span>· {n.meta.repo}</span>}
                 {n.meta?.cycle && <span>· {n.meta.cycle}</span>}
+                {n.meta?.team && <span>· {n.meta.team}</span>}
+                {n.source === "linear" && <LinearStateChip n={n} />}
               </div>
             </div>
           </div>
@@ -86,6 +90,8 @@ export function NotificationDetail() {
           <p className="mt-4 text-[13.5px] leading-6 whitespace-pre-wrap text-ink-2 select-text">
             {n.snippet}
           </p>
+
+          {n.source === "linear" && <LinearSections n={n} />}
 
           {agentRun && <AgentStatusPanel run={agentRun} />}
 
@@ -122,6 +128,61 @@ export function NotificationDetail() {
         </div>
       </div>
     </section>
+  );
+}
+
+interface TicketComment {
+  author: string;
+  body: string;
+  at: string;
+}
+
+/** Full ticket body + latest comments, collapsible (Linear). */
+function LinearSections({ n }: { n: AppNotification }) {
+  const description = n.meta?.description;
+  let comments: TicketComment[] = [];
+  try {
+    comments = n.meta?.comments ? (JSON.parse(n.meta.comments) as TicketComment[]) : [];
+  } catch {
+    comments = [];
+  }
+  if (!description && comments.length === 0) return null;
+
+  return (
+    <div className="mt-4 flex flex-col gap-2">
+      {description && (
+        <Collapsible title="Ticket description" defaultOpen>
+          <p className="text-[13px] leading-5.5 whitespace-pre-wrap text-ink-2 select-text">
+            {description}
+          </p>
+        </Collapsible>
+      )}
+      {comments.length > 0 && (
+        <Collapsible
+          title="Comments"
+          badge={<Chip>{comments.length}</Chip>}
+          defaultOpen={comments.length <= 2}
+        >
+          <div className="flex flex-col gap-2.5">
+            {comments.map((c, i) => (
+              <div key={i} className="rounded-lg bg-surface-3/60 p-2.5">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[12px] font-semibold">{c.author}</span>
+                  {c.at && (
+                    <span className="text-[10.5px] text-ink-3">
+                      {relativeTime(Date.parse(c.at) || Date.now())}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-[13px] leading-5 whitespace-pre-wrap text-ink-2 select-text">
+                  {c.body}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Collapsible>
+      )}
+    </div>
   );
 }
 

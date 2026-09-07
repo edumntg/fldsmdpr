@@ -25,6 +25,7 @@ import { Chip } from "../../components/ui/Chip";
 import { IconButton } from "../../components/ui/IconButton";
 import { AgentStatusRow } from "../agents/AgentStatusRow";
 import { SlackOverview } from "./SlackOverview";
+import { LinearStateChip } from "../../components/ui/LinearStateChip";
 
 /** Default agent action label per notification type (for the context menu). */
 function defaultAction(type: NotificationType): string {
@@ -386,7 +387,11 @@ function NotificationCard({
                 </Chip>
               )}
               {n.meta?.ci === "failing" && <Chip tone="danger">CI failing</Chip>}
+              {n.source === "linear" && <LinearStateChip n={n} />}
               {n.meta?.priority === "Urgent" && <Chip tone="warning">Urgent</Chip>}
+              {n.source === "linear" && n.meta?.cycle && (
+                <span className="text-[11px] text-ink-3">{n.meta.cycle}</span>
+              )}
               <span className="ml-auto text-[11px] text-ink-3">{relativeTime(n.createdAt)}</span>
             </div>
             {run && <AgentStatusRow run={run} />}

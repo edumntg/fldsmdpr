@@ -125,11 +125,18 @@ export async function slackAiStatus(): Promise<SlackAiStatus> {
   if (!inTauri)
     return {
       available: true,
-      enabled: false,
+      enabled: true, // browser preview: show the overview with sample data
       about_me: "",
-      last_sync_at: null,
-      day_summary: "",
-      week_summary: "",
+      last_sync_at: Date.now() - 8 * 60_000,
+      day_summary: JSON.stringify([
+        { text: "The payout webhook started returning 500s after the 10am deploy; platform team asked for an owner.", channel: "#payments", actionable: true },
+        { text: "Migration plan for the notifications table approved — staging run scheduled for tomorrow.", channel: "#eng-platform", actionable: false },
+        { text: "A teammate asked whether the admin pipeline is fixed.", channel: "DM", actionable: true },
+      ]),
+      week_summary: JSON.stringify([
+        { text: "Cycle 14 kicked off with rate-limit hardening as the top priority.", channel: "#eng-platform", actionable: false },
+        { text: "Two incidents traced to expired GitHub tokens; a circuit breaker was proposed (PLA-341).", channel: "#incidents", actionable: true },
+      ]),
     };
   return invoke<SlackAiStatus>("slack_ai_status");
 }
