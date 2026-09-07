@@ -23,6 +23,10 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir)?;
             let conn = db::open(&data_dir.join("fldsmdpr.db"))?;
             app.manage(AppDb(Mutex::new(conn)));
+            // Warm the token cache once, up front, so the keychain prompt (if
+            // the OS shows one) happens a single time at launch rather than on
+            // every background sync.
+            secrets::warm(&["token:github", "token:linear", "token:slack"]);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
