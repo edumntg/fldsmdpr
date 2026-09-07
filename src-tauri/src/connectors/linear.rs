@@ -20,8 +20,9 @@ const QUERY: &str = "
         priority
         priorityLabel
         state { name }
-        team { key }
+        team { key name }
         cycle { number }
+        project { name lead { displayName } }
       }
     }
   }
@@ -123,8 +124,17 @@ pub async fn fetch(token: &str) -> Result<Vec<Fetched>, String> {
         if let Some(c) = cycle {
             meta.insert("cycle".into(), format!("Cycle {c}"));
         }
-        if let Some(team) = issue["team"]["key"].as_str() {
+        if let Some(team) = issue["team"]["name"]
+            .as_str()
+            .or(issue["team"]["key"].as_str())
+        {
             meta.insert("team".into(), team.to_string());
+        }
+        if let Some(project) = issue["project"]["name"].as_str() {
+            meta.insert("project".into(), project.to_string());
+        }
+        if let Some(lead) = issue["project"]["lead"]["displayName"].as_str() {
+            meta.insert("lead".into(), lead.to_string());
         }
 
         out.push(Fetched {
