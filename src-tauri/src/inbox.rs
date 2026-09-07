@@ -92,6 +92,35 @@ pub fn set_notification_state(db: State<AppDb>, id: String, state: String) -> Re
     Ok(())
 }
 
+/// Auto-resolves items that a successful sync no longer returned (merged PRs,
+/// closed issues, completed tickets): anything of `source` not in `keep_ids`
+/// is marked done so it leaves the inbox without deleting history.
+pub fn resolve_missing(
+    conn: &rusqlite::Connection,
+    source: &str,
+    keep_ids: &std::collections::HashSet<String>,
+) -> Result<usize, String> {
+    let mut stmt = conn
+        .prepare("SELECT id FROM notifications WHERE source = ?1 AND state != 'done'")
+        .map_err(|e| e.to_string())?;
+    let existing: Vec<String> = stmt
+        .query_map([source], |r| r.get(0))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|e| e.to_string())?;
+
+    let mut resolved = 0usize;
+    for id in existing.iter().filter(|id| !keep_ids.contains(*id)) {
+        conn.execute(
+            "UPDATE notifications SET state = 'done' WHERE id = ?1",
+            [id],
+        )
+        .map_err(|e| e.to_string())?;
+        resolved += 1;
+    }
+    Ok(resolved)
+}
+
 /// Upserts fetched items; returns how many were new. Existing rows keep their
 /// read/done state — a sync must never resurrect what the user already triaged.
 pub fn upsert(conn: &rusqlite::Connection, items: &[Fetched]) -> Result<usize, String> {

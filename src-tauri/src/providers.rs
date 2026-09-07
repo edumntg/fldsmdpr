@@ -191,7 +191,7 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
     let mut errors: Vec<String> = Vec::new();
     let mut fetched: Vec<crate::connectors::Fetched> = Vec::new();
 
-    // GitHub (Phase 1). Slack/Linear/Calendar connectors land in Phases 2-3.
+    // Slack/Calendar connectors land in Phases 2-3.
     if let Ok(Some(token)) = crate::secrets::get(&token_key("github")) {
         match crate::connectors::github::fetch(&token).await {
             Ok(items) => {
@@ -199,6 +199,15 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
                 synced.push("github".into());
             }
             Err(e) => errors.push(format!("github: {e}")),
+        }
+    }
+    if let Ok(Some(token)) = crate::secrets::get(&token_key("linear")) {
+        match crate::connectors::linear::fetch(&token).await {
+            Ok(items) => {
+                fetched.extend(items);
+                synced.push("linear".into());
+            }
+            Err(e) => errors.push(format!("linear: {e}")),
         }
     }
 
@@ -210,6 +219,16 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
     let new_count = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         let new_count = crate::inbox::upsert(&conn, &fetched)?;
+        // Auto-resolve items the provider no longer reports (merged/closed/completed),
+        // but only for providers whose fetch actually succeeded.
+        for p in &synced {
+            let keep: std::collections::HashSet<String> = fetched
+                .iter()
+                .filter(|f| f.source == *p)
+                .map(|f| f.id.clone())
+                .collect();
+            let _ = crate::inbox::resolve_missing(&conn, p, &keep)?;
+        }
         kv_set(&conn, "last_sync_at", &now.to_string());
         for p in &synced {
             kv_set(&conn, &format!("last_sync:{p}"), &now.to_string());
