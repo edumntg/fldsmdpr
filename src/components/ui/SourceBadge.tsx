@@ -1,4 +1,14 @@
-import { GitPullRequest, GitMerge, CircleDot, MessageSquare, Calendar, Bot } from "lucide-react";
+import {
+  GitPullRequest,
+  GitMerge,
+  CircleDot,
+  MessageSquare,
+  Calendar,
+  Bot,
+  FileText,
+  NotebookPen,
+  Flame,
+} from "lucide-react";
 import type { Source, AppNotification } from "../../lib/types";
 import { cn } from "../../lib/utils";
 
@@ -8,6 +18,9 @@ const config: Record<Source, { icon: typeof Bot; label: string; color: string; b
   linear: { icon: CircleDot, label: "Linear", color: "text-src-linear", bg: "bg-src-linear/12" },
   gcal: { icon: Calendar, label: "Calendar", color: "text-src-gcal", bg: "bg-src-gcal/12" },
   agent: { icon: Bot, label: "Agent", color: "text-src-agent", bg: "bg-src-agent/12" },
+  notion: { icon: FileText, label: "Notion", color: "text-src-notion", bg: "bg-src-notion/12" },
+  granola: { icon: NotebookPen, label: "Meetings", color: "text-src-granola", bg: "bg-src-granola/12" },
+  sentry: { icon: Flame, label: "Sentry", color: "text-src-sentry", bg: "bg-src-sentry/12" },
 };
 
 /** GitHub items pick icon (PR vs issue vs merged) and color (open=green,

@@ -38,6 +38,9 @@
   --src-linear: #5e6ad2;
   --src-gcal: #d97706;
   --src-agent: #0e9f9f;
+  --src-notion: #64748b;
+  --src-granola: #84a63b;
+  --src-sentry: #d1305b;
 
   --shadow-card: 0 1px 2px rgba(16, 18, 27, 0.04), 0 4px 16px rgba(16, 18, 27, 0.05);
   --shadow-pop: 0 8px 30px rgba(16, 18, 27, 0.16), 0 2px 8px rgba(16, 18, 27, 0.08);
@@ -72,6 +75,9 @@
   --src-linear: #7c86e8;
   --src-gcal: #f5a623;
   --src-agent: #22c8c8;
+  --src-notion: #94a3b8;
+  --src-granola: #a3c94c;
+  --src-sentry: #f0567f;
 
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 16px rgba(0, 0, 0, 0.25);
   --shadow-pop: 0 8px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.35);
@@ -101,6 +107,9 @@
   --color-src-linear: var(--src-linear);
   --color-src-gcal: var(--src-gcal);
   --color-src-agent: var(--src-agent);
+  --color-src-notion: var(--src-notion);
+  --color-src-granola: var(--src-granola);
+  --color-src-sentry: var(--src-sentry);
 
   --font-sans: "Gabarito Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;

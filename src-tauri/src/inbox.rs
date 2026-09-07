@@ -56,39 +56,40 @@ pub fn list_notifications(db: State<AppDb>) -> Result<Vec<NotificationRow>, Stri
         .map_err(|e| e.to_string())?;
 
     let rows = stmt
-        .query_map([], |r| {
-            let relevance = match (
-                r.get::<_, Option<String>>(9)?,
-                r.get::<_, Option<f64>>(10)?,
-                r.get::<_, Option<String>>(11)?,
-            ) {
-                (Some(kind), Some(score), Some(reason)) => Some(Relevance {
-                    kind,
-                    score,
-                    reason,
-                }),
-                _ => None,
-            };
-            let meta: Option<HashMap<String, String>> =
-                serde_json::from_str(&r.get::<_, String>(12)?).ok();
-            Ok(NotificationRow {
-                id: r.get(0)?,
-                source: r.get(1)?,
-                ntype: r.get(2)?,
-                title: r.get(3)?,
-                snippet: r.get(4)?,
-                url: r.get(5)?,
-                created_at: r.get(6)?,
-                priority: r.get(7)?,
-                state: r.get(8)?,
-                relevance,
-                meta,
-            })
-        })
+        .query_map([], row_to_notification)
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
     Ok(rows)
+}
+
+fn row_to_notification(r: &rusqlite::Row) -> rusqlite::Result<NotificationRow> {
+    let relevance = match (
+        r.get::<_, Option<String>>(9)?,
+        r.get::<_, Option<f64>>(10)?,
+        r.get::<_, Option<String>>(11)?,
+    ) {
+        (Some(kind), Some(score), Some(reason)) => Some(Relevance {
+            kind,
+            score,
+            reason,
+        }),
+        _ => None,
+    };
+    let meta: Option<HashMap<String, String>> = serde_json::from_str(&r.get::<_, String>(12)?).ok();
+    Ok(NotificationRow {
+        id: r.get(0)?,
+        source: r.get(1)?,
+        ntype: r.get(2)?,
+        title: r.get(3)?,
+        snippet: r.get(4)?,
+        url: r.get(5)?,
+        created_at: r.get(6)?,
+        priority: r.get(7)?,
+        state: r.get(8)?,
+        relevance,
+        meta,
+    })
 }
 
 #[tauri::command]
@@ -103,6 +104,49 @@ pub fn set_notification_state(db: State<AppDb>, id: String, state: String) -> Re
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Full-text search across ALL notifications, including done/archived ones —
+/// nothing that ever reached the inbox is unfindable.
+#[tauri::command]
+pub fn search_notifications(
+    db: State<AppDb>,
+    query: String,
+) -> Result<Vec<NotificationRow>, String> {
+    // Sanitize into FTS5-safe prefix terms.
+    let terms: Vec<String> = query
+        .split_whitespace()
+        .map(|t| {
+            t.chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect::<String>()
+        })
+        .filter(|t| !t.is_empty())
+        .map(|t| format!("{t}*"))
+        .collect();
+    if terms.is_empty() {
+        return Ok(Vec::new());
+    }
+    let fts_query = terms.join(" ");
+
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT n.id, n.source, n.type, n.title, n.snippet, n.url, n.created_at, n.priority,
+                    n.state, n.relevance_kind, n.relevance_score, n.relevance_reason, n.context_json
+             FROM notifications_fts f
+             JOIN notifications n ON n.rowid = f.rowid
+             WHERE notifications_fts MATCH ?1
+             ORDER BY rank
+             LIMIT 30",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([fts_query], row_to_notification)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(rows)
 }
 
 /// Snoozes a notification until `until` (unix ms); it wakes as unread.

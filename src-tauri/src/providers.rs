@@ -3,7 +3,7 @@ use serde::Serialize;
 use serde_json::json;
 use tauri::State;
 
-pub const PROVIDERS: &[&str] = &["github", "slack", "linear", "gcal"];
+pub const PROVIDERS: &[&str] = &["github", "slack", "linear", "gcal", "sentry"];
 
 fn token_key(provider: &str) -> String {
     format!("token:{provider}")
@@ -170,6 +170,7 @@ async fn validate(provider: &str, token: &str) -> Result<String, String> {
             })
         }
         "gcal" => crate::connectors::gcal::validate(token).await,
+        "sentry" => crate::connectors::sentry::validate(token).await,
         other => Err(format!("Unknown provider: {other}")),
     }
 }
@@ -222,6 +223,18 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
                 resolve_sources.push("linear");
             }
             Err(e) => errors.push(format!("linear: {e}")),
+        }
+    }
+    if let Ok(Some(token)) = crate::secrets::get(&token_key("sentry")) {
+        match crate::connectors::sentry::fetch(&token).await {
+            Ok((items, complete)) => {
+                fetched.extend(items);
+                synced.push("sentry".into());
+                if complete {
+                    resolve_sources.push("sentry");
+                }
+            }
+            Err(e) => errors.push(format!("sentry: {e}")),
         }
     }
     if let Ok(Some(auth)) = crate::slack::load_auth() {

@@ -1,7 +1,9 @@
+pub mod ai_rounds;
 pub mod gcal;
 pub mod github;
 pub mod linear;
 pub mod maccal;
+pub mod sentry;
 pub mod slack;
 
 use std::collections::HashMap;

@@ -1,4 +1,5 @@
 mod agents;
+mod ai_sources;
 mod calendar;
 mod commands;
 mod connectors;
@@ -44,6 +45,7 @@ pub fn run() {
             inbox::list_notifications,
             inbox::set_notification_state,
             inbox::snooze_notification,
+            inbox::search_notifications,
             agents::orca_status,
             agents::orca_repos,
             agents::agent_session_upsert,
@@ -63,6 +65,10 @@ pub fn run() {
             slack::slack_ai_check,
             slack::slack_set_ai,
             slack::slack_ai_sync,
+            ai_sources::ai_source_status,
+            ai_sources::ai_source_set,
+            ai_sources::ai_source_sync,
+            ai_sources::morning_briefing,
             calendar::maccal_config,
             calendar::maccal_list_calendars,
             calendar::maccal_set_config,

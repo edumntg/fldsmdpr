@@ -46,7 +46,7 @@ export interface ProviderStatus {
 export async function providerStatus(): Promise<ProviderStatus[]> {
   if (!inTauri) {
     // browser preview: read from localStorage mirror
-    return ["github", "slack", "linear", "gcal"].map((id) => ({
+    return ["github", "slack", "linear", "gcal", "sentry"].map((id) => ({
       id,
       connected: localStorage.getItem(`mock-conn:${id}`) !== null,
       account: localStorage.getItem(`mock-conn:${id}`),
@@ -174,6 +174,35 @@ export async function slackSetChannels(channels: SlackChannel[]): Promise<void> 
   return invoke("slack_set_channels", { channels });
 }
 
+// ---- AI sources (Notion / Granola via claude rounds) ----
+
+export interface AiSourceStatus {
+  available: boolean;
+  enabled: boolean;
+  last_sync_at: number | null;
+  last_error: string | null;
+}
+
+export async function aiSourceStatus(source: string): Promise<AiSourceStatus> {
+  if (!inTauri) return { available: true, enabled: false, last_sync_at: null, last_error: null };
+  return invoke<AiSourceStatus>("ai_source_status", { source });
+}
+
+export async function aiSourceSet(source: string, enabled: boolean): Promise<void> {
+  if (!inTauri) return;
+  return invoke("ai_source_set", { source, enabled });
+}
+
+export async function aiSourceSync(source: string): Promise<number> {
+  if (!inTauri) return 0;
+  return invoke<number>("ai_source_sync", { source });
+}
+
+export async function morningBriefing(): Promise<void> {
+  if (!inTauri) return;
+  return invoke("morning_briefing");
+}
+
 // ---- macOS Calendar ----
 
 export interface MacCalConfig {
@@ -251,6 +280,18 @@ export async function setNotificationState(id: string, state: NotificationState)
 export async function snoozeNotification(id: string, until: number): Promise<void> {
   if (!inTauri) return;
   return invoke("snooze_notification", { id, until });
+}
+
+/** Full-text search across everything ever received, including archived/done. */
+export async function searchNotifications(query: string): Promise<AppNotification[]> {
+  if (!inTauri) {
+    const q = query.toLowerCase();
+    const { mockNotifications } = await import("../features/inbox/mockData");
+    return mockNotifications.filter(
+      (n) => n.title.toLowerCase().includes(q) || n.snippet.toLowerCase().includes(q),
+    );
+  }
+  return invoke<AppNotification[]>("search_notifications", { query });
 }
 
 // ---- agent sessions (history) ----

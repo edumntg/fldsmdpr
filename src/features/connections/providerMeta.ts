@@ -67,6 +67,22 @@ export const PROVIDER_META: ProviderMeta[] = [
     available: true,
   },
   {
+    id: "sentry",
+    name: "Sentry",
+    tokenLabel: "User Auth Token",
+    placeholder: "sntrys_… or sntryu_…",
+    createUrl: "https://sentry.io/settings/account/api/auth-tokens/",
+    createUrlLabel: "sentry.io → User Auth Tokens",
+    steps: [
+      "Open sentry.io → your avatar → User settings → “User Auth Tokens”.",
+      "Create a new token named “FLDSMDPR” with the scopes listed below.",
+      "Copy the token, paste it here, and press Connect — validated against the Sentry API, stored only in your OS keychain.",
+      "Unresolved errors assigned to you then flow into the inbox with “Fix with agent”.",
+    ],
+    scopes: ["org:read", "project:read", "event:read"],
+    available: true,
+  },
+  {
     id: "gcal",
     name: "Google Calendar",
     tokenLabel: "Secret iCal URL (no app / OAuth)",

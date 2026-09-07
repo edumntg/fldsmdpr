@@ -35,7 +35,10 @@ function agentActions(n: AppNotification): { label: string; icon: typeof Bot }[]
       return [{ label: "Draft reply", icon: MessageSquareReply }];
     case "ticket":
     case "assigned":
+    case "action_item":
       return [{ label: "Run agent on this task", icon: Bot }];
+    case "incident":
+      return [{ label: "Fix with agent", icon: Wrench }];
     default:
       return [];
   }

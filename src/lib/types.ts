@@ -1,4 +1,12 @@
-export type Source = "github" | "slack" | "linear" | "gcal" | "agent";
+export type Source =
+  | "github"
+  | "slack"
+  | "linear"
+  | "gcal"
+  | "agent"
+  | "notion"
+  | "granola"
+  | "sentry";
 
 export type NotificationType =
   | "pr_review"
@@ -8,6 +16,8 @@ export type NotificationType =
   | "ai_inferred"
   | "ticket"
   | "event"
+  | "incident"
+  | "action_item"
   | "agent_done"
   | "agent_needs_input";
 
@@ -34,4 +44,12 @@ export interface AppNotification {
   meta?: Record<string, string>;
 }
 
-export type SectionId = "inbox" | "prs" | "slack" | "tickets" | "calendar" | "agents" | "settings";
+export type SectionId =
+  | "today"
+  | "inbox"
+  | "prs"
+  | "slack"
+  | "tickets"
+  | "calendar"
+  | "agents"
+  | "settings";

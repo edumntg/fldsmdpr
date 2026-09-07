@@ -8,6 +8,7 @@ import { PROVIDER_META } from "../connections/providerMeta";
 import { ConnectionCard } from "../connections/ConnectionCard";
 import { SlackConnectionCard } from "../connections/SlackConnectionCard";
 import { CalendarCard } from "../connections/CalendarCard";
+import { AiSourceCard } from "../connections/AiSourceCard";
 import { Button } from "../../components/ui/Button";
 import { cn, relativeTime } from "../../lib/utils";
 
@@ -102,6 +103,8 @@ export function SettingsView() {
                   <ConnectionCard key={meta.id} meta={meta} />
                 ),
               )}
+              <AiSourceCard source="notion" />
+              <AiSourceCard source="granola" />
             </div>
           </div>
 

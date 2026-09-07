@@ -66,7 +66,10 @@ fn ai_log(line: &str) {
 /// A shell wrapper (`zsh -ilc`) is also unusable: without a TTY it detaches the
 /// job and returns immediately. Direct spawn is verified to authenticate fine
 /// in the launchd (GUI app) context.
-fn run_claude_to_files(args: &[&str], secs: u64) -> Result<(String, String, bool), String> {
+pub(crate) fn run_claude_to_files(
+    args: &[&str],
+    secs: u64,
+) -> Result<(String, String, bool), String> {
     use std::fs;
 
     let bin = claude_bin().ok_or("The `claude` CLI wasn't found on this machine.")?;
@@ -167,7 +170,7 @@ fn build_prompt(about_me: &str) -> String {
 
 /// claude's stdout can contain several concatenated JSON objects; the answer is
 /// the one with `"type":"result"` (kept last if repeated).
-fn result_envelope(raw: &str) -> Option<Value> {
+pub(crate) fn result_envelope(raw: &str) -> Option<Value> {
     let mut envelope = None;
     for v in serde_json::Deserializer::from_str(raw.trim()).into_iter::<Value>() {
         match v {
@@ -320,7 +323,7 @@ fn extract_balanced(s: &str, open: char, close: char) -> Option<&str> {
     None
 }
 
-fn extract_json_object(s: &str) -> Option<&str> {
+pub(crate) fn extract_json_object(s: &str) -> Option<&str> {
     extract_balanced(s, '{', '}')
 }
 
