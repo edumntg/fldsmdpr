@@ -152,3 +152,108 @@ pub async fn fetch(token: &str) -> Result<(Vec<Fetched>, bool), String> {
 
     Ok((by_id.into_values().collect(), complete))
 }
+
+// ---- PR detail (files changed, diff, description) ----
+
+#[derive(serde::Serialize)]
+pub struct PrFile {
+    pub filename: String,
+    pub status: String,
+    pub additions: i64,
+    pub deletions: i64,
+    /// Unified diff hunk; truncated for very large files, None for binaries.
+    pub patch: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct PrDetail {
+    pub body: String,
+    pub author: String,
+    pub base: String,
+    pub head: String,
+    pub additions: i64,
+    pub deletions: i64,
+    pub changed_files: i64,
+    pub commits: i64,
+    pub files: Vec<PrFile>,
+    /// True when the file list was capped (very large PRs).
+    pub truncated: bool,
+}
+
+const MAX_FILES: usize = 50;
+const MAX_PATCH_CHARS: usize = 6000;
+
+pub async fn pr_detail(token: &str, repo: &str, number: i64) -> Result<PrDetail, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("fldsmdpr/0.1")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let get = |url: String| {
+        client
+            .get(url)
+            .bearer_auth(token)
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Accept", "application/vnd.github+json")
+            .send()
+    };
+
+    let res = get(format!(
+        "https://api.github.com/repos/{repo}/pulls/{number}"
+    ))
+    .await
+    .map_err(|e| format!("GitHub request failed: {e}"))?;
+    if sso_required(&res) {
+        return Err(SSO_ERROR.into());
+    }
+    if !res.status().is_success() {
+        return Err(format!("GitHub PR fetch failed (HTTP {})", res.status()));
+    }
+    let pr: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+
+    let res = get(format!(
+        "https://api.github.com/repos/{repo}/pulls/{number}/files?per_page={MAX_FILES}"
+    ))
+    .await
+    .map_err(|e| format!("GitHub request failed: {e}"))?;
+    if !res.status().is_success() {
+        return Err(format!("GitHub files fetch failed (HTTP {})", res.status()));
+    }
+    let raw_files: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+
+    let files: Vec<PrFile> = raw_files
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|f| PrFile {
+                    filename: f["filename"].as_str().unwrap_or("").to_string(),
+                    status: f["status"].as_str().unwrap_or("").to_string(),
+                    additions: f["additions"].as_i64().unwrap_or(0),
+                    deletions: f["deletions"].as_i64().unwrap_or(0),
+                    patch: f["patch"].as_str().map(|p| {
+                        if p.chars().count() > MAX_PATCH_CHARS {
+                            let cut: String = p.chars().take(MAX_PATCH_CHARS).collect();
+                            format!("{cut}\n… (truncated)")
+                        } else {
+                            p.to_string()
+                        }
+                    }),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let changed_files = pr["changed_files"].as_i64().unwrap_or(files.len() as i64);
+    Ok(PrDetail {
+        body: pr["body"].as_str().unwrap_or("").to_string(),
+        author: pr["user"]["login"].as_str().unwrap_or("").to_string(),
+        base: pr["base"]["ref"].as_str().unwrap_or("").to_string(),
+        head: pr["head"]["ref"].as_str().unwrap_or("").to_string(),
+        additions: pr["additions"].as_i64().unwrap_or(0),
+        deletions: pr["deletions"].as_i64().unwrap_or(0),
+        changed_files,
+        commits: pr["commits"].as_i64().unwrap_or(0),
+        truncated: changed_files > files.len() as i64,
+        files,
+    })
+}

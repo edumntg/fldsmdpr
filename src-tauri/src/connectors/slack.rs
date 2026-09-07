@@ -163,10 +163,10 @@ fn build_prompt(about_me: &str) -> String {
          Respond with ONLY a JSON object as the final content:\n\
          {{\"items\":[{{\"channel\":\"\",\"from\":\"\",\"text\":\"\",\"ts\":\"\",\"permalink\":\"\",\"kind\":\"explicit\",\"reason\":\"\"}}],\
 \"daySummary\":[{{\"text\":\"\",\"channel\":\"\",\"actionable\":false}}],\"weekSummary\":[{{\"text\":\"\",\"channel\":\"\",\"actionable\":false}}],\
-\"tasks\":[{{\"key\":\"\",\"title\":\"\",\"detail\":\"\",\"channel\":\"\",\"from\":\"\",\"ts\":\"\",\"permalink\":\"\"}}]}}\n\
+\"tasks\":[{{\"key\":\"\",\"title\":\"\",\"detail\":\"\",\"channel\":\"\",\"from\":\"\",\"ts\":\"\",\"permalink\":\"\",\"urgency\":\"normal\"}}]}}\n\
          - items: last 24h only. \"kind\" is \"explicit\" for @mentions/DMs/thread replies, or \"implicit\" for inferred relevance (short justification in \"reason\"). \"text\" trimmed ~200 chars. \"ts\" = Slack message timestamp. Skip bots. Max 25 items.\n\
          - daySummary: 3-8 granular, self-contained bullet items covering the last 24h. weekSummary: 3-10 items covering the last 7 days max (themes, decisions, pending follow-ups). Each item: \"text\" (1-2 sentences), \"channel\" where it happened, and \"actionable\": true ONLY if it describes concrete work I could delegate to a coding agent (a bug, fix request, code task) — false for FYI/decisions/social.\n\
-         - tasks: max 10, last 7 days. \"key\" is a short kebab-case slug derived from the task's core subject (e.g. \"fix-payout-webhook-500s\") — the SAME underlying task must always produce the SAME key across runs, so never include dates or message ids in it. \"title\" is imperative (\"Fix …\", \"Review …\"), \"detail\" 1-2 sentences of context, \"ts\" = timestamp of the triggering message. Only real, still-open asks — don't invent tasks and skip anything already resolved in the thread.\n\
+         - tasks: max 10, last 7 days. \"key\" is a short kebab-case slug derived from the task's core subject (e.g. \"fix-payout-webhook-500s\") — the SAME underlying task must always produce the SAME key across runs, so never include dates or message ids in it. \"title\" is imperative (\"Fix …\", \"Review …\"), \"detail\" 1-2 sentences of context, \"ts\" = timestamp of the triggering message. \"urgency\" is \"high\" ONLY when the messages say it's urgent/blocking/ASAP or production is affected — otherwise \"normal\". Only real, still-open asks — don't invent tasks and skip anything already resolved in the thread.\n\
          If nothing notable, return one item saying so. If Slack is unavailable, return {{\"items\":[],\"daySummary\":[],\"weekSummary\":[],\"tasks\":[]}}."
     )
 }
@@ -306,10 +306,14 @@ pub fn fetch_via_claude(about_me: &str) -> Result<SlackAiResult, String> {
             .filter(|ms| *ms > 0)
             .unwrap_or_else(now_ms);
 
+        let urgent = t["urgency"].as_str().unwrap_or("normal") == "high";
         let mut meta = HashMap::new();
         meta.insert("channel".into(), channel.clone());
         if !from.is_empty() {
             meta.insert("from".into(), from);
+        }
+        if urgent {
+            meta.insert("priority".into(), "Urgent".into());
         }
 
         out_items.push(Fetched {
@@ -320,7 +324,7 @@ pub fn fetch_via_claude(about_me: &str) -> Result<SlackAiResult, String> {
             snippet: t["detail"].as_str().unwrap_or("").to_string(),
             url: t["permalink"].as_str().map(String::from),
             created_at: created_ms,
-            priority: 80.0,
+            priority: if urgent { 92.0 } else { 80.0 },
             meta,
             relevance: None,
         });

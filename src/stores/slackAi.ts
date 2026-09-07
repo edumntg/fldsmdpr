@@ -17,9 +17,11 @@ interface SlackAiState {
   setConfig: (enabled: boolean, aboutMe: string) => Promise<void>;
 }
 
-// Slack-via-claude rounds are heavy (2-6 min of agentic Slack reading), so run
-// them sparsely — analyze-on-open plus every 15 min while focused.
-const INTERVAL_MS = 15 * 60_000;
+// Slack-via-claude rounds are heavy (2-6 min of agentic Slack reading), so
+// they run sparsely: the daily 9:00 analysis, then at most once an hour
+// (which also covers "app just opened with stale data").
+const INTERVAL_MS = 60 * 60_000;
+const DAILY_AT = "09:00";
 let armed = false;
 
 export const useSlackAi = create<SlackAiState>((set, get) => ({
@@ -45,14 +47,20 @@ export const useSlackAi = create<SlackAiState>((set, get) => ({
       loaded: true,
     });
 
-    if (s.enabled) void get().sync(); // analyze on open
-
     if (!armed) {
       armed = true;
-      setInterval(() => {
+      // Minute tick: fire the daily 9:00 analysis, and otherwise re-analyze
+      // once the last run is over an hour old (incl. right after opening).
+      const tick = () => {
         const st = get();
-        if (st.enabled && !st.running && document.hasFocus()) void st.sync();
-      }, INTERVAL_MS);
+        if (!st.enabled || st.running) return;
+        const now = new Date();
+        const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+        const stale = !st.lastSyncAt || Date.now() - st.lastSyncAt >= INTERVAL_MS;
+        if (hhmm === DAILY_AT || stale) void st.sync();
+      };
+      tick(); // evaluate immediately on open
+      setInterval(tick, 60_000);
     }
   },
 

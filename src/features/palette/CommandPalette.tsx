@@ -14,6 +14,8 @@ import {
   MonitorSmartphone,
   RefreshCw,
   GraduationCap,
+  Flame,
+  NotebookPen,
 } from "lucide-react";
 import { useUi } from "../../stores/ui";
 import { useTheme } from "../../stores/theme";
@@ -60,6 +62,8 @@ export function CommandPalette() {
       go("prs", "Pull Requests", GitPullRequest),
       go("slack", "Slack", MessageSquare),
       go("tickets", "Tickets", CircleDot),
+      go("errors", "Errors", Flame),
+      go("meetings", "Meetings", NotebookPen),
       go("calendar", "Calendar", Calendar),
       go("agents", "Agents", Bot),
       go("settings", "Settings", Settings),

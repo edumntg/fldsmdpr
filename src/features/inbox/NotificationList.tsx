@@ -67,6 +67,8 @@ const sectionTitles: Record<SectionId, string> = {
   prs: "Pull Requests",
   slack: "Slack",
   tickets: "Tickets",
+  errors: "Errors",
+  meetings: "Meetings",
   calendar: "Calendar",
   agents: "Agents",
   settings: "Settings",
@@ -115,6 +117,7 @@ const SECTION_GROUPS: Partial<Record<SectionId, GroupKey[]>> = {
   inbox: ["none", "source", "repo", "type"],
   prs: ["none", "repo", "author", "type"],
   tickets: ["none", "status", "priority", "project", "lead", "cycle", "team"],
+  errors: ["none", "project"],
 };
 
 function typeLabel(n: AppNotification): string {

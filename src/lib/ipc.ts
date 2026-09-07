@@ -174,6 +174,56 @@ export async function slackSetChannels(channels: SlackChannel[]): Promise<void> 
   return invoke("slack_set_channels", { channels });
 }
 
+// ---- GitHub PR detail (files changed, diffs) ----
+
+export interface PrFile {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch: string | null;
+}
+
+export interface PrDetail {
+  body: string;
+  author: string;
+  base: string;
+  head: string;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  commits: number;
+  files: PrFile[];
+  truncated: boolean;
+}
+
+export async function githubPrDetail(repo: string, number: number): Promise<PrDetail> {
+  if (!inTauri) {
+    return {
+      body: "Fixes the retry storm by adding jittered backoff to the webhook worker.",
+      author: "a-teammate",
+      base: "main",
+      head: "fix/retry-backoff",
+      additions: 120,
+      deletions: 43,
+      changed_files: 2,
+      commits: 3,
+      truncated: false,
+      files: [
+        {
+          filename: "src/worker/retry.ts",
+          status: "modified",
+          additions: 98,
+          deletions: 30,
+          patch: "@@ -10,7 +10,12 @@\n-const delay = 1000;\n+const delay = base * 2 ** attempt + jitter();",
+        },
+        { filename: "src/worker/retry.test.ts", status: "modified", additions: 22, deletions: 13, patch: null },
+      ],
+    };
+  }
+  return invoke<PrDetail>("github_pr_detail", { repo, number });
+}
+
 // ---- AI sources (Notion / Granola via claude rounds) ----
 
 export interface AiSourceStatus {

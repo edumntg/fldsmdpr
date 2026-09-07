@@ -32,6 +32,8 @@ const sectionSources: Partial<Record<SectionId, AppNotification["source"][]>> = 
   prs: ["github"],
   slack: ["slack"],
   tickets: ["linear"],
+  errors: ["sentry"],
+  meetings: ["granola"],
   calendar: ["gcal"],
   agents: ["agent"],
 };

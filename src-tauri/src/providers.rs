@@ -190,6 +190,19 @@ pub struct SyncResult {
     pub errors: Vec<String>,
 }
 
+/// Full PR context (description, branches, files changed with diffs) fetched
+/// on demand when a GitHub PR is opened in the detail pane.
+#[tauri::command]
+pub async fn github_pr_detail(
+    repo: String,
+    number: i64,
+) -> Result<crate::connectors::github::PrDetail, String> {
+    let token = crate::secrets::get(&token_key("github"))
+        .map_err(|e| e.to_string())?
+        .ok_or("GitHub is not connected")?;
+    crate::connectors::github::pr_detail(&token, &repo, number).await
+}
+
 #[tauri::command]
 pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<SyncResult, String> {
     let mut synced: Vec<String> = Vec::new();

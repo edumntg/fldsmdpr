@@ -8,10 +8,10 @@ import {
   Wrench,
   MousePointerClick,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useInbox } from "../../stores/inbox";
 import { useUi } from "../../stores/ui";
-import { snoozeNotification } from "../../lib/ipc";
+import { snoozeNotification, githubPrDetail, type PrDetail } from "../../lib/ipc";
 import type { AppNotification } from "../../lib/types";
 import { relativeTime } from "../../lib/utils";
 import { Button } from "../../components/ui/Button";
@@ -98,6 +98,8 @@ export function NotificationDetail() {
 
           {n.source === "linear" && <LinearSections n={n} />}
 
+          {n.source === "github" && n.meta?.is_pr !== "false" && <PrSections n={n} />}
+
           {agentRun && <AgentStatusPanel run={agentRun} />}
 
           <div className="mt-6 flex flex-wrap items-start gap-2 border-t border-line pt-4">
@@ -174,6 +176,115 @@ function SnoozeButton({ n, onSnoozed }: { n: AppNotification; onSnoozed: () => v
             </button>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** PR description, branch/commit stats, and the changed files with diffs —
+ * fetched on demand from the GitHub API when the PR is opened. */
+function PrSections({ n }: { n: AppNotification }) {
+  const [detail, setDetail] = useState<PrDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const repo = n.meta?.repo;
+  const number = Number((n.meta?.number ?? "").replace("#", ""));
+
+  useEffect(() => {
+    setDetail(null);
+    setError(null);
+    if (!repo || !number) return;
+    let cancelled = false;
+    githubPrDetail(repo, number)
+      .then((d) => !cancelled && setDetail(d))
+      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, number, n.id]);
+
+  if (!repo || !number) return null;
+  if (error) return <p className="mt-3 text-xs text-ink-3">Couldn't load PR details: {error}</p>;
+  if (!detail) return <p className="mt-3 text-xs text-ink-3">Loading PR details…</p>;
+
+  return (
+    <div className="mt-4 flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-3">
+        <span className="font-mono">
+          {detail.head} → {detail.base}
+        </span>
+        <span>
+          <span className="font-medium text-success">+{detail.additions}</span>{" "}
+          <span className="font-medium text-danger">−{detail.deletions}</span>
+        </span>
+        <span>
+          {detail.changed_files} {detail.changed_files === 1 ? "file" : "files"} · {detail.commits}{" "}
+          {detail.commits === 1 ? "commit" : "commits"}
+        </span>
+      </div>
+
+      {detail.body.trim() && (
+        <Collapsible title="Description" defaultOpen>
+          <p className="text-[13px] leading-6 whitespace-pre-wrap text-ink-2 select-text">
+            {detail.body.trim()}
+          </p>
+        </Collapsible>
+      )}
+
+      <Collapsible title={`Files changed (${detail.changed_files})`} defaultOpen>
+        <div className="flex flex-col gap-1.5">
+          {detail.files.map((f) => (
+            <PrFileRow key={f.filename} f={f} />
+          ))}
+          {detail.truncated && (
+            <p className="text-xs text-ink-3">
+              Showing the first {detail.files.length} files — open the PR for the rest.
+            </p>
+          )}
+        </div>
+      </Collapsible>
+    </div>
+  );
+}
+
+function PrFileRow({ f }: { f: PrDetail["files"][number] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="overflow-hidden rounded-lg border border-line">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full cursor-default items-center gap-2 bg-surface px-2.5 py-1.5 text-left"
+      >
+        <span className="min-w-0 flex-1 truncate font-mono text-xs">{f.filename}</span>
+        {f.status === "added" && <span className="text-[10px] font-semibold text-success uppercase">new</span>}
+        {f.status === "removed" && <span className="text-[10px] font-semibold text-danger uppercase">deleted</span>}
+        <span className="shrink-0 text-xs">
+          <span className="text-success">+{f.additions}</span>{" "}
+          <span className="text-danger">−{f.deletions}</span>
+        </span>
+      </button>
+      {open && (
+        <pre className="max-h-72 overflow-auto bg-surface-2 px-2.5 py-2 font-mono text-[11px] leading-4.5 select-text">
+          {f.patch ? (
+            f.patch.split("\n").map((line, i) => (
+              <div
+                key={i}
+                className={
+                  line.startsWith("+")
+                    ? "bg-success/10 text-success"
+                    : line.startsWith("-")
+                      ? "bg-danger/10 text-danger"
+                      : line.startsWith("@@")
+                        ? "text-accent"
+                        : "text-ink-2"
+                }
+              >
+                {line || " "}
+              </div>
+            ))
+          ) : (
+            <span className="text-ink-3">No text diff (binary or too large).</span>
+          )}
+        </pre>
       )}
     </div>
   );

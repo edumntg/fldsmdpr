@@ -1,4 +1,5 @@
-import { Calendar, ExternalLink, Flame, ArrowRight } from "lucide-react";
+import { Calendar, ExternalLink, Flame, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { useState } from "react";
 import { useInbox } from "../../stores/inbox";
 import { useUi } from "../../stores/ui";
 import type { AppNotification, Source } from "../../lib/types";
@@ -13,6 +14,15 @@ function greeting(): string {
 }
 
 const isToday = (ms: number) => new Date(ms).toDateString() === new Date().toDateString();
+
+/** Explicitly flagged as high priority at the source (Linear priority field,
+ * Slack tasks claude judged urgent) — these jump the date ordering. */
+const isHighPriority = (n: AppNotification) => {
+  const p = n.meta?.priority?.toLowerCase();
+  return p === "urgent" || p === "high";
+};
+
+const PAGE_SIZE = 10;
 
 async function openUrl(url?: string) {
   if (!url) return;
@@ -29,15 +39,22 @@ export function TodayView() {
   const items = useInbox((s) => s.items);
   const setSection = useUi((s) => s.setSection);
   const select = useUi((s) => s.select);
+  const [page, setPage] = useState(0);
 
   const active = items.filter((n) => n.state !== "done");
   const agenda = active
     .filter((n) => n.source === "gcal" && isToday(n.createdAt))
     .sort((a, b) => a.createdAt - b.createdAt);
-  const actionables = active
+  // Newest first, but anything the source marked high-priority jumps the queue.
+  const allActionables = active
     .filter((n) => n.source !== "gcal")
-    .sort((a, b) => b.priority - a.priority || b.createdAt - a.createdAt)
-    .slice(0, 7);
+    .sort(
+      (a, b) =>
+        Number(isHighPriority(b)) - Number(isHighPriority(a)) || b.createdAt - a.createdAt,
+    );
+  const pageCount = Math.max(1, Math.ceil(allActionables.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const actionables = allActionables.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
 
   const counts = new Map<Source, number>();
   for (const n of active) counts.set(n.source, (counts.get(n.source) ?? 0) + 1);
@@ -138,13 +155,20 @@ export function TodayView() {
                   >
                     <SourceBadge source={n.source} size={13} n={n} />
                     <span className="min-w-0 flex-1">
-                      <span
-                        className={cn(
-                          "block truncate text-[13px]",
-                          n.state === "unread" ? "font-semibold" : "font-medium text-ink-2",
+                      <span className="flex items-center gap-1.5">
+                        {isHighPriority(n) && (
+                          <span className="shrink-0 rounded-pill bg-danger/10 px-1.5 py-px text-[10px] font-semibold text-danger">
+                            {n.meta?.priority}
+                          </span>
                         )}
-                      >
-                        {n.title}
+                        <span
+                          className={cn(
+                            "truncate text-[13px]",
+                            n.state === "unread" ? "font-semibold" : "font-medium text-ink-2",
+                          )}
+                        >
+                          {n.title}
+                        </span>
                       </span>
                       <span className="block truncate text-xs text-ink-3">{n.snippet}</span>
                     </span>
@@ -155,6 +179,35 @@ export function TodayView() {
                     />
                   </button>
                 ))}
+                {pageCount > 1 && (
+                  <div className="flex items-center justify-between border-t border-line pt-2.5">
+                    <button
+                      onClick={() => setPage(Math.max(0, safePage - 1))}
+                      disabled={safePage === 0}
+                      className={cn(
+                        "inline-flex cursor-default items-center gap-1 text-xs font-medium",
+                        safePage === 0 ? "text-ink-3" : "text-accent hover:underline",
+                      )}
+                    >
+                      <ChevronLeft size={13} />
+                      Previous
+                    </button>
+                    <span className="text-xs text-ink-3">
+                      {safePage + 1} / {pageCount} · {allActionables.length} items
+                    </span>
+                    <button
+                      onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
+                      disabled={safePage >= pageCount - 1}
+                      className={cn(
+                        "inline-flex cursor-default items-center gap-1 text-xs font-medium",
+                        safePage >= pageCount - 1 ? "text-ink-3" : "text-accent hover:underline",
+                      )}
+                    >
+                      Next
+                      <ChevronRight size={13} />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </Card>
@@ -172,6 +225,10 @@ function sectionFor(source: Source) {
       return "slack" as const;
     case "linear":
       return "tickets" as const;
+    case "sentry":
+      return "errors" as const;
+    case "granola":
+      return "meetings" as const;
     case "gcal":
       return "calendar" as const;
     default:

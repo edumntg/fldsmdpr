@@ -50,6 +50,8 @@ export type SectionId =
   | "prs"
   | "slack"
   | "tickets"
+  | "errors"
+  | "meetings"
   | "calendar"
   | "agents"
   | "settings";

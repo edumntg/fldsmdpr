@@ -11,6 +11,8 @@ import {
   PanelLeftOpen,
   Search,
   Sunrise,
+  Flame,
+  NotebookPen,
 } from "lucide-react";
 import type { SectionId } from "../../lib/types";
 import { useUi } from "../../stores/ui";
@@ -29,6 +31,8 @@ const NAV: { id: SectionId; label: string; icon: typeof Inbox }[] = [
   { id: "prs", label: "Pull Requests", icon: GitPullRequest },
   { id: "slack", label: "Slack", icon: MessageSquare },
   { id: "tickets", label: "Tickets", icon: CircleDot },
+  { id: "errors", label: "Errors", icon: Flame },
+  { id: "meetings", label: "Meetings", icon: NotebookPen },
   { id: "calendar", label: "Calendar", icon: Calendar },
   { id: "agents", label: "Agents", icon: Bot },
 ];
