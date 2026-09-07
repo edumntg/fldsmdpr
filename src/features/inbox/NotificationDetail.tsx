@@ -15,6 +15,7 @@ import { relativeTime } from "../../lib/utils";
 import { Button } from "../../components/ui/Button";
 import { Chip } from "../../components/ui/Chip";
 import { SourceBadge, sourceLabel } from "../../components/ui/SourceBadge";
+import { AgentRunButton } from "../agents/AgentRunButton";
 
 /** Agent actions offered per notification type (wired to real sessions in Phase 4). */
 function agentActions(n: AppNotification): { label: string; icon: typeof Bot }[] {
@@ -83,12 +84,9 @@ export function NotificationDetail() {
             {n.snippet}
           </p>
 
-          <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-line pt-4">
-            {actions.map(({ label, icon: Icon }) => (
-              <Button key={label} variant="primary" title="Agent execution lands in Phase 4">
-                <Icon size={14} />
-                {label}
-              </Button>
+          <div className="mt-6 flex flex-wrap items-start gap-2 border-t border-line pt-4">
+            {actions.map(({ label, icon }) => (
+              <AgentRunButton key={label} n={n} label={label} icon={icon} />
             ))}
             {n.url && (
               <Button variant="secondary" onClick={() => open(n.url)}>

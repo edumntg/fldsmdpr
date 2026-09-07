@@ -1,3 +1,4 @@
+mod agents;
 mod commands;
 mod connectors;
 mod db;
@@ -37,6 +38,8 @@ pub fn run() {
             providers::run_sync,
             inbox::list_notifications,
             inbox::set_notification_state,
+            agents::orca_status,
+            agents::launch_orca,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

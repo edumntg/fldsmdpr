@@ -86,6 +86,26 @@ export async function runSync(): Promise<SyncResult> {
   return invoke<SyncResult>("run_sync");
 }
 
+// ---- agents ----
+
+export async function orcaStatus(): Promise<{ installed: boolean }> {
+  if (!inTauri) return { installed: true }; // browser preview pretends it's there
+  return invoke<{ installed: boolean }>("orca_status");
+}
+
+export async function launchOrca(args: {
+  name: string;
+  repo: string;
+  prompt: string;
+  comment?: string;
+}): Promise<{ worktree: string }> {
+  if (!inTauri) {
+    await new Promise((r) => setTimeout(r, 600));
+    return { worktree: args.name };
+  }
+  return invoke<{ worktree: string }>("launch_orca", args);
+}
+
 // ---- inbox ----
 
 import type { AppNotification, NotificationState } from "./types";
