@@ -11,11 +11,13 @@ import {
   ExternalLink,
   Eye,
   CircleDot,
+  Loader2,
 } from "lucide-react";
 import { useInbox, filterBySection } from "../../stores/inbox";
 import { useUi } from "../../stores/ui";
 import { useSync } from "../../stores/sync";
 import { useAgents } from "../../stores/agents";
+import { useSlackAi } from "../../stores/slackAi";
 import type { AppNotification, SectionId, NotificationType } from "../../lib/types";
 import { cn, relativeTime } from "../../lib/utils";
 import { SourceBadge, sourceLabel } from "../../components/ui/SourceBadge";
@@ -210,7 +212,7 @@ export function NotificationList() {
       <header data-tauri-drag-region className="flex h-13 shrink-0 items-center px-4">
         <h1 className="text-[15px] font-semibold tracking-tight">{sectionTitles[section]}</h1>
         <span className="ml-2 text-xs text-ink-3 tabular-nums">{visible.length}</span>
-        <SyncIndicator />
+        {section === "slack" ? <SlackAnalyzeIndicator /> : <SyncIndicator />}
       </header>
 
       {groupOptions.length > 1 && visible.length > 0 && (
@@ -471,6 +473,26 @@ function CardContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => vo
           {it.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+function SlackAnalyzeIndicator() {
+  const { running, enabled, lastSyncAt, sync } = useSlackAi();
+  if (running) {
+    return (
+      <div className="ml-auto flex items-center gap-1.5">
+        <Loader2 size={13} className="animate-spin text-src-agent" />
+        <span className="text-[11px] font-medium text-src-agent">Analyzing Slack…</span>
+      </div>
+    );
+  }
+  return (
+    <div className="ml-auto flex items-center gap-1">
+      {lastSyncAt && <span className="text-[11px] text-ink-3">Analyzed {relativeTime(lastSyncAt)}</span>}
+      <IconButton label="Analyze Slack now" onClick={() => void sync()} disabled={!enabled}>
+        <Sparkles size={14} />
+      </IconButton>
     </div>
   );
 }

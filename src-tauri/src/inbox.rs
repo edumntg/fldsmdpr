@@ -137,16 +137,24 @@ pub fn upsert(conn: &rusqlite::Connection, items: &[Fetched]) -> Result<usize, S
             new_count += 1;
         }
         let context_json = serde_json::to_string(&item.meta).map_err(|e| e.to_string())?;
+        let (rel_kind, rel_score, rel_reason) = match &item.relevance {
+            Some(r) => (Some(r.kind.clone()), Some(r.score), Some(r.reason.clone())),
+            None => (None, None, None),
+        };
         conn.execute(
-            "INSERT INTO notifications (id, source, type, title, snippet, url, created_at, priority, context_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            "INSERT INTO notifications (id, source, type, title, snippet, url, created_at, priority,
+                                        context_json, relevance_kind, relevance_score, relevance_reason)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 snippet = excluded.snippet,
                 url = excluded.url,
                 created_at = excluded.created_at,
                 priority = excluded.priority,
-                context_json = excluded.context_json",
+                context_json = excluded.context_json,
+                relevance_kind = excluded.relevance_kind,
+                relevance_score = excluded.relevance_score,
+                relevance_reason = excluded.relevance_reason",
             rusqlite::params![
                 item.id,
                 item.source,
@@ -157,6 +165,9 @@ pub fn upsert(conn: &rusqlite::Connection, items: &[Fetched]) -> Result<usize, S
                 item.created_at,
                 item.priority,
                 context_json,
+                rel_kind,
+                rel_score,
+                rel_reason,
             ],
         )
         .map_err(|e| e.to_string())?;

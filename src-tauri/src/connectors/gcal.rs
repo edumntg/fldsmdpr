@@ -83,6 +83,7 @@ pub async fn fetch(url: &str) -> Result<Vec<Fetched>, String> {
             created_at: start.timestamp_millis(),
             priority,
             meta,
+            relevance: None,
         });
     }
 

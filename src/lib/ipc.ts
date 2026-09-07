@@ -112,6 +112,33 @@ export async function slackListChannels(): Promise<SlackChannel[]> {
   return invoke<SlackChannel[]>("slack_list_channels");
 }
 
+export interface SlackAiStatus {
+  available: boolean;
+  enabled: boolean;
+  about_me: string;
+  last_sync_at: number | null;
+}
+
+export async function slackAiStatus(): Promise<SlackAiStatus> {
+  if (!inTauri) return { available: true, enabled: false, about_me: "", last_sync_at: null };
+  return invoke<SlackAiStatus>("slack_ai_status");
+}
+
+export async function slackAiCheck(): Promise<boolean> {
+  if (!inTauri) return true;
+  return invoke<boolean>("slack_ai_check");
+}
+
+export async function slackSetAi(enabled: boolean, aboutMe: string): Promise<void> {
+  if (!inTauri) return;
+  return invoke("slack_set_ai", { enabled, aboutMe });
+}
+
+export async function slackAiSync(): Promise<number> {
+  if (!inTauri) return 0;
+  return invoke<number>("slack_ai_sync");
+}
+
 export async function slackResolveChannel(idOrUrl: string): Promise<SlackChannel> {
   if (!inTauri) {
     const id = (idOrUrl.match(/[CGD][A-Z0-9]{6,}/) ?? ["C0PREVIEW"])[0];

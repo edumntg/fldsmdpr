@@ -6,6 +6,14 @@ pub mod slack;
 
 use std::collections::HashMap;
 
+/// AI/relevance annotation for a fetched item (drives the "AI: relevant to you"
+/// chip). `kind` is "explicit" or "implicit".
+pub struct FetchedRelevance {
+    pub kind: String,
+    pub score: f64,
+    pub reason: String,
+}
+
 /// A provider-agnostic item produced by a connector fetch, ready to upsert
 /// into the notifications table.
 pub struct Fetched {
@@ -18,4 +26,5 @@ pub struct Fetched {
     pub created_at: i64, // unix ms
     pub priority: f64,
     pub meta: HashMap<String, String>,
+    pub relevance: Option<FetchedRelevance>,
 }

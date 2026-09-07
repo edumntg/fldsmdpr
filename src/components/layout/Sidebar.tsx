@@ -15,6 +15,8 @@ import type { SectionId } from "../../lib/types";
 import { useUi } from "../../stores/ui";
 import { useInbox, unreadCount } from "../../stores/inbox";
 import { useTerminal } from "../../stores/terminal";
+import { useSlackAi } from "../../stores/slackAi";
+import { Loader2 } from "lucide-react";
 import { cn, isMac, modKey } from "../../lib/utils";
 import { Kbd } from "../ui/Kbd";
 import { IconButton } from "../ui/IconButton";
@@ -32,6 +34,7 @@ export function Sidebar() {
   const { section, setSection, sidebarCollapsed, toggleSidebar, setPaletteOpen } = useUi();
   const items = useInbox((s) => s.items);
   const toggleTerminal = useTerminal((s) => s.toggle);
+  const slackAnalyzing = useSlackAi((s) => s.running);
 
   return (
     <aside
@@ -91,7 +94,13 @@ export function Sidebar() {
             >
               <Icon size={16} strokeWidth={2} className="shrink-0" />
               {!sidebarCollapsed && <span className="flex-1 truncate text-left">{label}</span>}
-              {!sidebarCollapsed && unread > 0 && (
+              {id === "slack" && slackAnalyzing && (
+                <Loader2
+                  size={13}
+                  className={cn("shrink-0 animate-spin", active ? "text-accent-fg" : "text-src-agent")}
+                />
+              )}
+              {!sidebarCollapsed && unread > 0 && !(id === "slack" && slackAnalyzing) && (
                 <span
                   className={cn(
                     "rounded-pill px-1.5 py-px text-[10.5px] font-semibold tabular-nums",

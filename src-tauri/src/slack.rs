@@ -151,3 +151,109 @@ pub fn clear(conn: &rusqlite::Connection) {
         [CHANNELS_KV],
     );
 }
+
+// ---- Slack via headless claude + MCP (primary path) ----
+
+const AI_ENABLED_KV: &str = "slack:ai_enabled";
+const ABOUT_ME_KV: &str = "slack:about_me";
+const AI_LAST_SYNC_KV: &str = "slack:ai_last_sync";
+
+fn kv_get(conn: &rusqlite::Connection, key: &str) -> Option<String> {
+    conn.query_row("SELECT value FROM kv WHERE key = ?1", [key], |r| r.get(0))
+        .optional()
+        .ok()
+        .flatten()
+}
+
+fn kv_put(conn: &rusqlite::Connection, key: &str, value: &str) {
+    let _ = conn.execute(
+        "INSERT INTO kv(key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [key, value],
+    );
+}
+
+#[derive(Serialize)]
+pub struct SlackAiStatus {
+    pub available: bool,
+    pub enabled: bool,
+    pub about_me: String,
+    pub last_sync_at: Option<i64>,
+}
+
+#[tauri::command]
+pub fn slack_ai_status(db: State<AppDb>) -> Result<SlackAiStatus, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    Ok(SlackAiStatus {
+        available: crate::connectors::slack::claude_bin().is_some(),
+        enabled: kv_get(&conn, AI_ENABLED_KV).as_deref() == Some("1"),
+        about_me: kv_get(&conn, ABOUT_ME_KV).unwrap_or_default(),
+        last_sync_at: kv_get(&conn, AI_LAST_SYNC_KV).and_then(|s| s.parse().ok()),
+    })
+}
+
+/// Verifies the claude CLI has the Slack MCP connected (runs `claude mcp list`,
+/// which is slow — only call on an explicit user action).
+#[tauri::command]
+pub async fn slack_ai_check() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(crate::connectors::slack::claude_slack_ready)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn slack_set_ai(db: State<AppDb>, enabled: bool, about_me: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    kv_put(&conn, AI_ENABLED_KV, if enabled { "1" } else { "0" });
+    kv_put(&conn, ABOUT_ME_KV, &about_me);
+    Ok(())
+}
+
+/// Runs the (slow) Slack-via-claude fetch and upserts results. Called on its own
+/// slower cadence by the frontend, not from the fast run_sync.
+#[tauri::command]
+pub async fn slack_ai_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<usize, String> {
+    let (enabled, about_me) = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        (
+            kv_get(&conn, AI_ENABLED_KV).as_deref() == Some("1"),
+            kv_get(&conn, ABOUT_ME_KV).unwrap_or_default(),
+        )
+    };
+    if !enabled {
+        return Ok(0);
+    }
+
+    let items = tauri::async_runtime::spawn_blocking(move || {
+        crate::connectors::slack::fetch_via_claude(&about_me)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis() as i64;
+
+    let new_count = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let n = crate::inbox::upsert(&conn, &items)?;
+        kv_put(&conn, AI_LAST_SYNC_KV, &now.to_string());
+        n
+    };
+
+    if new_count > 0 {
+        use tauri_plugin_notification::NotificationExt;
+        let _ = app
+            .notification()
+            .builder()
+            .title("FLDSMDPR · Slack")
+            .body(if new_count == 1 {
+                "1 new Slack item".to_string()
+            } else {
+                format!("{new_count} new Slack items")
+            })
+            .show();
+    }
+    Ok(new_count)
+}

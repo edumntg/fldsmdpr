@@ -137,6 +137,7 @@ pub async fn fetch(token: &str) -> Result<Vec<Fetched>, String> {
                     created_at: updated_ms,
                     priority: base_priority + recency_boost,
                     meta,
+                    relevance: None,
                 },
             );
         }

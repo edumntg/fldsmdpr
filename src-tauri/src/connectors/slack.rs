@@ -1,6 +1,191 @@
-use super::Fetched;
+use super::{Fetched, FetchedRelevance};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::PathBuf;
+
+// ============================================================================
+// Slack via headless `claude` + the official Slack MCP connector.
+//
+// The org blocks creating Slack apps and restricts session-token API access, so
+// the robust path is to let Claude (which has an authenticated Slack MCP) fetch
+// and *judge relevance* in one shot — giving explicit mentions AND AI-inferred
+// relevance (the differentiator) for free. Slower (~1 min), so it runs on its
+// own slower cadence, separate from the fast GitHub/Linear sync.
+// ============================================================================
+
+pub fn claude_bin() -> Option<PathBuf> {
+    if let Ok(out) = std::process::Command::new("which").arg("claude").output() {
+        if out.status.success() {
+            let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !p.is_empty() {
+                return Some(PathBuf::from(p));
+            }
+        }
+    }
+    [
+        dirs_home().map(|h| h.join(".local/bin/claude")),
+        Some(PathBuf::from("/opt/homebrew/bin/claude")),
+        Some(PathBuf::from("/usr/local/bin/claude")),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|p| p.exists())
+}
+
+fn dirs_home() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(PathBuf::from)
+}
+
+/// Returns true if the claude CLI reports the Slack MCP as connected.
+pub fn claude_slack_ready() -> bool {
+    let Some(bin) = claude_bin() else {
+        return false;
+    };
+    let Ok(out) = std::process::Command::new(bin)
+        .args(["mcp", "list"])
+        .output()
+    else {
+        return false;
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.lines()
+        .any(|l| l.to_lowercase().contains("slack") && l.contains("✔"))
+}
+
+fn build_prompt(about_me: &str) -> String {
+    let profile = if about_me.trim().is_empty() {
+        "(no profile provided)".to_string()
+    } else {
+        about_me.trim().to_string()
+    };
+    format!(
+        "You have Slack access via MCP tools. Find items from the last 24 hours that need my attention:\n\
+         1) messages that @-mention me; 2) DMs to me; 3) threads I'm in with new replies;\n\
+         4) messages relevant to me even without an @-mention — about services I own, my projects, my name, or decisions affecting my team.\n\n\
+         My profile: {profile}\n\n\
+         Respond with ONLY a JSON array as the final content. Each item exactly:\n\
+         {{\"channel\":\"\",\"from\":\"\",\"text\":\"\",\"ts\":\"\",\"permalink\":\"\",\"kind\":\"explicit\",\"reason\":\"\"}}\n\
+         - \"kind\" is \"explicit\" for @mentions/DMs/thread replies, or \"implicit\" for relevance you inferred (put a short justification in \"reason\").\n\
+         - \"text\": the message trimmed to ~200 chars. \"ts\": the Slack message timestamp.\n\
+         Skip automated/bot messages. Max 25 items. If Slack is unavailable, return []."
+    )
+}
+
+/// Runs the headless claude query and parses items into notifications.
+pub fn fetch_via_claude(about_me: &str) -> Result<Vec<Fetched>, String> {
+    let bin = claude_bin().ok_or("The `claude` CLI wasn't found on this machine.")?;
+    let out = std::process::Command::new(&bin)
+        .args([
+            "-p",
+            &build_prompt(about_me),
+            "--output-format",
+            "json",
+            "--allowedTools",
+            "mcp__claude_ai_Slack",
+        ])
+        .output()
+        .map_err(|e| format!("Couldn't run claude: {e}"))?;
+
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("claude failed: {}", err.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // The CLI returns a JSON envelope; the model's answer is in `.result`.
+    let envelope: Value = serde_json::from_str(stdout.trim())
+        .map_err(|e| format!("Unexpected claude output: {e}"))?;
+    let result_text = envelope["result"].as_str().unwrap_or("");
+    let array_str = extract_json_array(result_text)
+        .ok_or("Claude didn't return a JSON array (Slack may be unavailable).")?;
+    let items: Vec<Value> = serde_json::from_str(array_str).map_err(|e| e.to_string())?;
+
+    let mut out_items = Vec::new();
+    for it in &items {
+        let ts = it["ts"].as_str().unwrap_or("");
+        if ts.is_empty() {
+            continue;
+        }
+        let created_ms = ts
+            .split('.')
+            .next()
+            .and_then(|s| s.parse::<i64>().ok())
+            .map(|s| s * 1000)
+            .unwrap_or(0);
+
+        let channel = it["channel"].as_str().unwrap_or("Slack").to_string();
+        let from = it["from"].as_str().unwrap_or("Someone").to_string();
+        let text = it["text"].as_str().unwrap_or("").to_string();
+        let kind = it["kind"].as_str().unwrap_or("explicit");
+        let reason = it["reason"].as_str().unwrap_or("").to_string();
+        let implicit = kind == "implicit";
+
+        let mut meta = HashMap::new();
+        meta.insert("channel".into(), channel.clone());
+        meta.insert("from".into(), from.clone());
+
+        out_items.push(Fetched {
+            id: format!("slack:{ts}"),
+            source: "slack",
+            ntype: if implicit { "ai_inferred" } else { "mention" },
+            title: if implicit {
+                format!("Relevant in {channel}")
+            } else {
+                format!("{from} · {channel}")
+            },
+            snippet: text,
+            url: it["permalink"].as_str().map(String::from),
+            created_at: created_ms,
+            priority: if implicit { 78.0 } else { 82.0 },
+            meta,
+            relevance: Some(FetchedRelevance {
+                kind: kind.to_string(),
+                score: if implicit { 0.8 } else { 1.0 },
+                reason: if reason.is_empty() {
+                    "Directly addressed to you".into()
+                } else {
+                    reason
+                },
+            }),
+        });
+    }
+    Ok(out_items)
+}
+
+/// Extracts the first balanced JSON array from text that may be wrapped in prose
+/// or ```json fences (the org compliance layer can prepend a warning).
+fn extract_json_array(s: &str) -> Option<&str> {
+    let start = s.find('[')?;
+    let bytes = s.as_bytes();
+    let mut depth = 0i32;
+    let mut in_str = false;
+    let mut escaped = false;
+    for i in start..bytes.len() {
+        let c = bytes[i] as char;
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&s[start..=i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
 
 /// Slack credentials. `cookie` holds the `xoxd-…` value for session-token
 /// (xoxc) auth — required because the org blocks creating Slack apps, so we
@@ -185,6 +370,7 @@ pub async fn fetch(
                 created_at: created_ms,
                 priority: 82.0,
                 meta,
+                relevance: None,
             });
         }
     }

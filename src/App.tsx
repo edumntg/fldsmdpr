@@ -11,6 +11,7 @@ import { useTheme } from "./stores/theme";
 import { useSync } from "./stores/sync";
 import { useConnections } from "./stores/connections";
 import { useInbox } from "./stores/inbox";
+import { useSlackAi } from "./stores/slackAi";
 
 export default function App() {
   const section = useUi((s) => s.section);
@@ -18,6 +19,7 @@ export default function App() {
   const initSync = useSync((s) => s.init);
   const reloadInbox = useInbox((s) => s.reload);
   const refreshConnections = useConnections((s) => s.refresh);
+  const initSlackAi = useSlackAi((s) => s.init);
   const maybeAutoStartOnboarding = useOnboarding((s) => s.maybeAutoStart);
 
   useEffect(() => {
@@ -25,8 +27,9 @@ export default function App() {
     void reloadInbox(); // show cached items instantly…
     void initSync(); // …then refresh-on-open + daily scheduler
     void refreshConnections();
+    void initSlackAi(); // Slack-via-claude: analyze-on-open + slow scheduler
     void maybeAutoStartOnboarding();
-  }, [initTheme, reloadInbox, initSync, refreshConnections, maybeAutoStartOnboarding]);
+  }, [initTheme, reloadInbox, initSync, refreshConnections, initSlackAi, maybeAutoStartOnboarding]);
 
   return (
     <div className="flex h-full flex-col">

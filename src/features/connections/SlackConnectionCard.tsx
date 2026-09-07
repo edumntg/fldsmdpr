@@ -23,6 +23,7 @@ import {
 import { Button } from "../../components/ui/Button";
 import { Chip } from "../../components/ui/Chip";
 import { SourceBadge } from "../../components/ui/SourceBadge";
+import { ClaudeSlackSection } from "./ClaudeSlackSection";
 import { cn } from "../../lib/utils";
 
 const meta = providerMeta("slack")!;
@@ -50,6 +51,7 @@ export function SlackConnectionCard({ defaultExpanded = false }: { defaultExpand
   const [xoxd, setXoxd] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showToken, setShowToken] = useState(false);
 
   const onConnect = async () => {
     setBusy(true);
@@ -95,6 +97,20 @@ export function SlackConnectionCard({ defaultExpanded = false }: { defaultExpand
 
       {expanded && (
         <div className="animate-fade-in border-t border-line px-4 pt-3.5 pb-4">
+          <ClaudeSlackSection />
+
+          <div className="mt-4 border-t border-line pt-3">
+            <button
+              onClick={() => setShowToken((s) => !s)}
+              className="inline-flex cursor-default items-center gap-1.5 text-xs font-medium text-ink-3 hover:text-ink"
+            >
+              <ChevronDown size={12} className={cn("transition-transform", showToken && "rotate-180")} />
+              Advanced: session token (xoxc / xoxd)
+            </button>
+          </div>
+
+          {showToken && (
+            <div className="mt-3">
           {!connected ? (
             <>
               <h4 className="text-xs font-semibold tracking-wide text-ink-2 uppercase">Setup guide</h4>
@@ -186,6 +202,8 @@ export function SlackConnectionCard({ defaultExpanded = false }: { defaultExpand
               periodically — re-paste it if Slack sync starts failing.
             </p>
           </div>
+            </div>
+          )}
         </div>
       )}
     </div>
