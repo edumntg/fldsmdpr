@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@fontsource-variable/gabarito':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
@@ -56,6 +59,9 @@ importers:
         version: 8.2.2(jiti@2.7.0)
 
 packages:
+
+  '@fontsource-variable/gabarito@5.3.0':
+    resolution: {integrity: sha512-p7ROuY70ufLI5/hVvdgo4iJo17Dz2OfQXgdkaeS0U/B2wMqNIPt+/2WWWaAzrUYvcrNquL7farT2MY/vVo2ENw==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -682,6 +688,8 @@ packages:
         optional: true
 
 snapshots:
+
+  '@fontsource-variable/gabarito@5.3.0': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
