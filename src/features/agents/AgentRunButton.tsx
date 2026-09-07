@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Bot,
   ChevronDown,
@@ -28,11 +29,13 @@ function AgentRunnerMenu({
   n,
   label,
   initialView,
+  anchorEl,
   onClose,
 }: {
   n: AppNotification;
   label: string;
   initialView: MenuView;
+  anchorEl: HTMLElement;
   onClose: () => void;
 }) {
   const [view, setView] = useState<MenuView>(initialView);
@@ -41,10 +44,39 @@ function AgentRunnerMenu({
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [repoError, setRepoError] = useState<string | null>(null);
   const launch = useAgents((s) => s.launch);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void orcaStatus().then((s) => setOrcaInstalled(s.installed));
   }, []);
+
+  // The menu is portaled to <body>, so close-on-outside-click lives here
+  // (clicks on the anchor toggle it from the trigger instead).
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!menuRef.current?.contains(t) && !anchorEl.contains(t)) onClose();
+    };
+    const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onEsc);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onEsc);
+    };
+  }, [anchorEl, onClose]);
+
+  // Fixed position clamped to the viewport (flips upward near the bottom) —
+  // portaling avoids being clipped by scroll containers or painted behind
+  // sibling panes.
+  const rect = anchorEl.getBoundingClientRect();
+  const MENU_W = 304;
+  const MENU_H = 340;
+  const left = Math.max(8, Math.min(rect.left, window.innerWidth - MENU_W - 8));
+  const top =
+    rect.bottom + 6 + MENU_H > window.innerHeight
+      ? Math.max(8, rect.top - MENU_H - 6)
+      : rect.bottom + 6;
 
   useEffect(() => {
     if ((view === "orca-repos" || view === "claude-folder") && repos === null && !loadingRepos) {
@@ -111,8 +143,12 @@ function AgentRunnerMenu({
     </div>
   );
 
-  return (
-    <div className="animate-pop-in absolute top-full left-0 z-40 mt-1.5 w-76 overflow-hidden rounded-xl border border-line-strong bg-surface-2 p-1.5 shadow-pop">
+  return createPortal(
+    <div
+      ref={menuRef}
+      style={{ top, left }}
+      className="animate-pop-in fixed z-50 w-76 overflow-hidden rounded-xl border border-line-strong bg-surface-2 p-1.5 shadow-pop"
+    >
       {view === "runners" && (
         <>
           <RunnerOption
@@ -168,7 +204,8 @@ function AgentRunnerMenu({
           )}
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -181,40 +218,25 @@ interface ButtonProps {
 /** Split button used in the detail pane. */
 export function AgentRunButton({ n, label, icon: Icon }: ButtonProps) {
   const [open, setOpen] = useState(false);
-  const [initialView, setInitialView] = useState<MenuView>("runners");
-  const menuRef = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
   const run = useAgents((s) => s.runs[n.id]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [open]);
 
   if (run && isActive(run.status)) {
     return <AgentStatusRow run={run} />;
   }
 
-  const openAt = (v: MenuView) => {
-    setInitialView(v);
-    setOpen(true);
-  };
-
   return (
-    <div className="relative inline-flex flex-col" ref={menuRef}>
-      <div className="inline-flex">
+    <div className="inline-flex flex-col">
+      <div className="inline-flex" ref={anchorRef}>
         <button
-          onClick={() => openAt("runners")}
+          onClick={() => setOpen((o) => !o)}
           className="inline-flex h-8.5 cursor-default items-center gap-2 rounded-l-[999px] bg-accent px-3.5 text-[13px] font-medium text-accent-fg shadow-sm transition-colors hover:bg-accent-hover"
         >
           <Icon size={14} />
           {label}
         </button>
         <button
-          onClick={() => (open ? setOpen(false) : openAt("runners"))}
+          onClick={() => setOpen((o) => !o)}
           aria-label="Choose agent runner"
           className="inline-flex h-8.5 cursor-default items-center rounded-r-[999px] border-l border-white/25 bg-accent px-2 text-accent-fg transition-colors hover:bg-accent-hover"
         >
@@ -222,8 +244,14 @@ export function AgentRunButton({ n, label, icon: Icon }: ButtonProps) {
         </button>
       </div>
 
-      {open && (
-        <AgentRunnerMenu n={n} label={label} initialView={initialView} onClose={() => setOpen(false)} />
+      {open && anchorRef.current && (
+        <AgentRunnerMenu
+          n={n}
+          label={label}
+          initialView="runners"
+          anchorEl={anchorRef.current}
+          onClose={() => setOpen(false)}
+        />
       )}
 
       {run?.status === "failed" && <p className="mt-2 max-w-72 text-xs text-danger">{run.detail}</p>}
@@ -234,17 +262,8 @@ export function AgentRunButton({ n, label, icon: Icon }: ButtonProps) {
 /** Compact icon trigger (used on Slack summary items). */
 export function AgentQuickLaunch({ n, label }: { n: AppNotification; label: string }) {
   const [open, setOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
   const run = useAgents((s) => s.runs[n.id]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [open]);
 
   if (run && isActive(run.status)) {
     return <Loader2 size={13} className="shrink-0 animate-spin text-src-agent" />;
@@ -254,7 +273,7 @@ export function AgentQuickLaunch({ n, label }: { n: AppNotification; label: stri
   }
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div ref={anchorRef}>
       <button
         onClick={() => setOpen((o) => !o)}
         title="Run agent on this"
@@ -262,8 +281,14 @@ export function AgentQuickLaunch({ n, label }: { n: AppNotification; label: stri
       >
         <Bot size={13} />
       </button>
-      {open && (
-        <AgentRunnerMenu n={n} label={label} initialView="runners" onClose={() => setOpen(false)} />
+      {open && anchorRef.current && (
+        <AgentRunnerMenu
+          n={n}
+          label={label}
+          initialView="runners"
+          anchorEl={anchorRef.current}
+          onClose={() => setOpen(false)}
+        />
       )}
     </div>
   );

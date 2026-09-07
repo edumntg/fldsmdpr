@@ -190,6 +190,10 @@ pub fn fetch_via_claude(about_me: &str) -> Result<SlackAiResult, String> {
             "json",
             "--allowedTools",
             "mcp__claude_ai_Slack",
+            // Sonnet is plenty for fetch+summarize and much faster/cheaper than
+            // the account's default top model for this agentic loop.
+            "--model",
+            "claude-sonnet-5",
         ],
         // The week-summary pass makes many Slack tool calls; observed runs range
         // ~2-6 min, so give it headroom (the UI shows live status meanwhile).
