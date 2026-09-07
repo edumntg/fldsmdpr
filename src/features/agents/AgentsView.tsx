@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, CheckCircle2, XCircle, Bot, TerminalSquare, RefreshCw } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, CirclePause, Bot, TerminalSquare, RefreshCw } from "lucide-react";
 import { useAgents, type AgentRun } from "../../stores/agents";
 import { agentSessionsList, agentSessionUpsert, type AgentSession } from "../../lib/ipc";
 import { SourceBadge } from "../../components/ui/SourceBadge";
@@ -53,7 +53,7 @@ export function AgentsView() {
       // Sessions persisted as active but with no live run were orphaned by an
       // app quit (their PTY died with it) — settle them so they don't spin forever.
       const liveIds = new Set(Object.values(useAgents.getState().runs).map((r) => r.id));
-      const ACTIVE = new Set(["starting", "working", "thinking"]);
+      const ACTIVE = new Set(["starting", "working", "thinking", "waiting"]);
       setHistory(
         sessions.map((s) => {
           if (!ACTIVE.has(s.status) || liveIds.has(s.id)) return s;
@@ -83,7 +83,10 @@ export function AgentsView() {
     ...history.filter((s) => !liveIds.has(s.id)).map(fromSession),
   ].sort((a, b) => b.startedAt - a.startedAt);
 
-  const active = rows.filter((r) => r.status === "starting" || r.status === "working" || r.status === "thinking");
+  const active = rows.filter(
+    (r) =>
+      r.status === "starting" || r.status === "working" || r.status === "thinking" || r.status === "waiting",
+  );
   const past = rows.filter((r) => !active.includes(r));
 
   return (
@@ -172,6 +175,8 @@ function WorkCard({ r }: { r: WorkRow }) {
       <span className="mt-0.5 shrink-0">
         {running ? (
           <Loader2 size={15} className="animate-spin text-src-agent" />
+        ) : r.status === "waiting" ? (
+          <CirclePause size={15} className="text-warning" />
         ) : r.status === "done" ? (
           <CheckCircle2 size={15} className="text-success" />
         ) : (

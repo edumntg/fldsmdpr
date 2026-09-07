@@ -1,11 +1,12 @@
-import { Loader2, CheckCircle2, XCircle, Bot, X } from "lucide-react";
-import { useAgents, isActive, type AgentRun } from "../../stores/agents";
+import { Loader2, CheckCircle2, XCircle, CirclePause, Bot, X } from "lucide-react";
+import { useAgents, isActive, isLive, type AgentRun } from "../../stores/agents";
 import { cn } from "../../lib/utils";
 
 const statusLabel: Record<AgentRun["status"], string> = {
   starting: "Starting…",
   working: "Working…",
   thinking: "Thinking…",
+  waiting: "Waiting for you",
   done: "Done",
   failed: "Failed",
 };
@@ -17,6 +18,8 @@ export function AgentStatusRow({ run }: { run: AgentRun }) {
     <div className="mt-2 flex items-center gap-2 rounded-lg bg-src-agent/8 px-2 py-1.5">
       {active ? (
         <Loader2 size={12} className="shrink-0 animate-spin text-src-agent" />
+      ) : run.status === "waiting" ? (
+        <CirclePause size={12} className="shrink-0 text-warning" />
       ) : run.status === "done" ? (
         <CheckCircle2 size={12} className="shrink-0 text-success" />
       ) : (
@@ -26,7 +29,13 @@ export function AgentStatusRow({ run }: { run: AgentRun }) {
       <span
         className={cn(
           "text-[11.5px] font-medium",
-          active ? "text-src-agent" : run.status === "failed" ? "text-danger" : "text-ink-2",
+          active
+            ? "text-src-agent"
+            : run.status === "waiting"
+              ? "text-warning"
+              : run.status === "failed"
+                ? "text-danger"
+                : "text-ink-2",
         )}
       >
         {statusLabel[run.status]}
@@ -47,6 +56,8 @@ export function AgentStatusPanel({ run }: { run: AgentRun }) {
     <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-src-agent/20 bg-src-agent/8 p-3">
       {active ? (
         <Loader2 size={16} className="mt-0.5 shrink-0 animate-spin text-src-agent" />
+      ) : run.status === "waiting" ? (
+        <CirclePause size={16} className="mt-0.5 shrink-0 text-warning" />
       ) : run.status === "done" ? (
         <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-success" />
       ) : (
@@ -58,7 +69,7 @@ export function AgentStatusPanel({ run }: { run: AgentRun }) {
         </p>
         <p className="mt-0.5 text-xs text-ink-2">{run.detail ?? run.label}</p>
       </div>
-      {!active && (
+      {!isLive(run.status) && (
         <button
           onClick={() => clear(run.notificationId)}
           className="cursor-default rounded p-0.5 text-ink-3 hover:text-ink"

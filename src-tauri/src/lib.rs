@@ -56,6 +56,7 @@ pub fn run() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_kill,
+            pty::pty_hook_status,
             slack::slack_connect,
             slack::slack_list_channels,
             slack::slack_resolve_channel,

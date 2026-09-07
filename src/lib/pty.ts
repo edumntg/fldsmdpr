@@ -11,6 +11,8 @@ export interface SpawnOpts {
   cwd?: string;
   program?: string;
   args?: string[];
+  /** Inject Claude Code lifecycle hooks so the app can track real status. */
+  hooks?: boolean;
   rows: number;
   cols: number;
 }
@@ -21,9 +23,16 @@ export async function ptySpawn(opts: SpawnOpts): Promise<string> {
     cwd: opts.cwd,
     program: opts.program,
     args: opts.args ?? [],
+    hooks: opts.hooks ?? false,
     rows: opts.rows,
     cols: opts.cols,
   });
+}
+
+/** Last hook event for a claude session: working | waiting | needs_input | ended. */
+export async function ptyHookStatus(id: string): Promise<string | null> {
+  if (!inTauri) return null;
+  return invoke<string | null>("pty_hook_status", { id });
 }
 
 export async function ptyWrite(id: string, data: string): Promise<void> {

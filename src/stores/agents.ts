@@ -5,7 +5,7 @@ import { repoLocalPath } from "../lib/pty";
 import { useTerminal } from "./terminal";
 import { buildAgentPrompt, worktreeName } from "../features/agents/prompt";
 
-export type AgentStatus = "starting" | "working" | "thinking" | "done" | "failed";
+export type AgentStatus = "starting" | "working" | "thinking" | "waiting" | "done" | "failed";
 
 export interface AgentRun {
   id: string; // session id (persisted)
@@ -36,7 +36,10 @@ function persist(run: AgentRun) {
   });
 }
 
+/** Busy: spinner-worthy. */
 export const isActive = (s: AgentStatus) => s === "starting" || s === "working" || s === "thinking";
+/** Live: the session still exists (busy or paused waiting on the user). */
+export const isLive = (s: AgentStatus) => isActive(s) || s === "waiting";
 
 interface AgentsState {
   runs: Record<string, AgentRun>;

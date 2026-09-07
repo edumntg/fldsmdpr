@@ -10,7 +10,23 @@ pub struct PtySession {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
+    /// Event log written by injected Claude Code hooks (agent sessions only).
+    hook_file: Option<std::path::PathBuf>,
 }
+
+/// Claude Code hook settings injected via `--settings` for agent sessions:
+/// each lifecycle event appends one word to $FLDSMDPR_HOOK_FILE so the app
+/// can show real statuses (working / waiting for you / needs input).
+const HOOKS_SETTINGS_JSON: &str = r#"{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command", "command": "echo working >> \"$FLDSMDPR_HOOK_FILE\""}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "echo working >> \"$FLDSMDPR_HOOK_FILE\""}]}],
+    "PreToolUse": [{"hooks": [{"type": "command", "command": "echo working >> \"$FLDSMDPR_HOOK_FILE\""}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "echo waiting >> \"$FLDSMDPR_HOOK_FILE\""}]}],
+    "Notification": [{"hooks": [{"type": "command", "command": "echo needs_input >> \"$FLDSMDPR_HOOK_FILE\""}]}],
+    "SessionEnd": [{"hooks": [{"type": "command", "command": "echo ended >> \"$FLDSMDPR_HOOK_FILE\""}]}]
+  }
+}"#;
 
 #[derive(Default)]
 pub struct PtyState(pub Mutex<HashMap<String, PtySession>>);
@@ -65,12 +81,14 @@ fn resolve_program(program: &str) -> String {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri maps each IPC field to a parameter
 pub fn pty_spawn(
     app: AppHandle,
     state: State<PtyState>,
     cwd: Option<String>,
     program: Option<String>,
     args: Vec<String>,
+    hooks: bool,
     rows: u16,
     cols: u16,
 ) -> Result<String, String> {
@@ -83,7 +101,22 @@ pub fn pty_spawn(
         })
         .map_err(|e| e.to_string())?;
 
+    let id = next_id();
     let mut cmd = CommandBuilder::new(resolve_program(&program.unwrap_or_else(default_shell)));
+
+    let hook_file = if hooks {
+        let settings = std::env::temp_dir().join("fldsmdpr-claude-hooks.json");
+        std::fs::write(&settings, HOOKS_SETTINGS_JSON).map_err(|e| e.to_string())?;
+        let events = std::env::temp_dir().join(format!("fldsmdpr-{id}.events"));
+        let _ = std::fs::write(&events, ""); // ensure it exists for early reads
+        cmd.arg("--settings");
+        cmd.arg(&settings);
+        cmd.env("FLDSMDPR_HOOK_FILE", &events);
+        Some(events)
+    } else {
+        None
+    };
+
     for a in &args {
         cmd.arg(a);
     }
@@ -95,7 +128,6 @@ pub fn pty_spawn(
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
-    let id = next_id();
 
     // Stream output to the frontend on a dedicated thread; on exit, reap the
     // session (wait() the child so it doesn't linger as a zombie) and drop it.
@@ -123,6 +155,9 @@ pub fn pty_spawn(
             let state = app_out.state::<PtyState>();
             if let Some(mut s) = state.0.lock().ok().and_then(|mut m| m.remove(&id_out)) {
                 let _ = s.child.wait();
+                if let Some(f) = s.hook_file.take() {
+                    let _ = std::fs::remove_file(f);
+                }
             }
         }
         let _ = app_out.emit("pty-exit", PtyExit { id: id_out.clone() });
@@ -134,6 +169,7 @@ pub fn pty_spawn(
             master: pair.master,
             writer,
             child,
+            hook_file,
         },
     );
     Ok(id)
@@ -171,6 +207,23 @@ pub fn pty_kill(state: State<PtyState>, id: String) -> Result<(), String> {
     if let Some(mut s) = state.0.lock().unwrap().remove(&id) {
         let _ = s.child.kill();
         let _ = s.child.wait(); // reap — otherwise it lingers as a zombie
+        if let Some(f) = s.hook_file.take() {
+            let _ = std::fs::remove_file(f);
+        }
     }
     Ok(())
+}
+
+/// Last lifecycle event Claude's injected hooks wrote for this session
+/// (working | waiting | needs_input | ended), if any.
+#[tauri::command]
+pub fn pty_hook_status(state: State<PtyState>, id: String) -> Option<String> {
+    let map = state.0.lock().ok()?;
+    let file = map.get(&id)?.hook_file.as_ref()?;
+    let content = std::fs::read_to_string(file).ok()?;
+    content
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .map(|l| l.trim().to_string())
 }

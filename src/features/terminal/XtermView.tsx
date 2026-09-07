@@ -4,9 +4,9 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import type { TermTab } from "../../stores/terminal";
-import { ptySpawn, ptyWrite, ptyResize, ptyKill, onPtyOutput } from "../../lib/pty";
+import { ptySpawn, ptyWrite, ptyResize, ptyKill, onPtyOutput, ptyHookStatus } from "../../lib/pty";
 import { useTheme } from "../../stores/theme";
-import { useAgents, isActive } from "../../stores/agents";
+import { useAgents, isLive, type AgentStatus } from "../../stores/agents";
 
 const themes = {
   dark: {
@@ -34,10 +34,18 @@ function finishLinkedRun(tab: TermTab, detail: string) {
   if (tab.kind !== "claude" || !tab.notificationId) return;
   const { runs, setStatus } = useAgents.getState();
   const run = runs[tab.notificationId];
-  if (!run || !isActive(run.status)) return;
+  if (!run || !isLive(run.status)) return;
   if (tab.runId && run.id !== tab.runId) return;
   setStatus(tab.notificationId, "done", detail);
 }
+
+/** Hook events (written by the claude session's injected lifecycle hooks)
+ * mapped to run statuses. */
+const HOOK_STATUS: Record<string, { status: AgentStatus; detail?: string }> = {
+  working: { status: "working", detail: "Working in the terminal" },
+  waiting: { status: "waiting", detail: "Waiting for you — check the terminal" },
+  needs_input: { status: "waiting", detail: "Needs your input (permission or question)" },
+};
 
 /**
  * One xterm.js instance bound to a PTY session. Stays mounted (hidden via
@@ -76,13 +84,18 @@ export function XtermView({ tab, active }: { tab: TermTab; active: boolean }) {
 
     let unsub: (() => void) | null = null;
     let disposed = false;
+    let hookPoll: ReturnType<typeof setInterval> | null = null;
 
     void (async () => {
       let id: string;
       try {
+        // The prompt goes in as a CLI argument — typing it into the TUI after a
+        // delay raced claude's startup and truncated the beginning.
         id = await ptySpawn({
           cwd: tab.cwd,
           program: tab.kind === "claude" ? "claude" : undefined,
+          args: tab.kind === "claude" && tab.seedPrompt ? [tab.seedPrompt] : undefined,
+          hooks: tab.kind === "claude" && !!tab.notificationId,
           rows: term.rows,
           cols: term.cols,
         });
@@ -110,17 +123,28 @@ export function XtermView({ tab, active }: { tab: TermTab; active: boolean }) {
       );
       term.onData((d) => void ptyWrite(id, d));
 
-      // Seed the claude session with the notification context.
-      if (tab.kind === "claude" && tab.seedPrompt) {
-        setTimeout(() => {
-          void ptyWrite(id, tab.seedPrompt!.replace(/\n/g, " ") + "\r");
-        }, 900);
+      // Poll the injected-hook event log so the run reflects what claude is
+      // actually doing (working / waiting for you / needs input).
+      if (tab.kind === "claude" && tab.notificationId) {
+        hookPoll = setInterval(async () => {
+          const ev = await ptyHookStatus(id).catch(() => null);
+          const next = ev ? HOOK_STATUS[ev] : undefined;
+          if (!next) return;
+          const { runs, setStatus } = useAgents.getState();
+          const run = runs[tab.notificationId!];
+          if (!run || !isLive(run.status)) return;
+          if (tab.runId && run.id !== tab.runId) return;
+          if (run.status !== next.status || (next.detail && run.detail !== next.detail)) {
+            setStatus(tab.notificationId!, next.status, next.detail);
+          }
+        }, 2000);
       }
     })();
 
     return () => {
       disposed = true;
       unsub?.();
+      if (hookPoll) clearInterval(hookPoll);
       if (ptyIdRef.current) void ptyKill(ptyIdRef.current);
       term.dispose();
       // Closing the tab kills the session before the exit event can fire, so
