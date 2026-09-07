@@ -169,7 +169,7 @@ async fn validate(provider: &str, token: &str) -> Result<String, String> {
                 format!("{user} @ {team}")
             })
         }
-        "gcal" => Err("Google Calendar uses OAuth — this flow lands in Phase 3.".into()),
+        "gcal" => crate::connectors::gcal::validate(token).await,
         other => Err(format!("Unknown provider: {other}")),
     }
 }
@@ -230,6 +230,15 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
                 synced.push("slack".into());
             }
             Err(e) => errors.push(format!("slack: {e}")),
+        }
+    }
+    if let Ok(Some(url)) = crate::secrets::get(&token_key("gcal")) {
+        match crate::connectors::gcal::fetch(&url).await {
+            Ok(items) => {
+                fetched.extend(items);
+                synced.push("gcal".into());
+            }
+            Err(e) => errors.push(format!("gcal: {e}")),
         }
     }
 

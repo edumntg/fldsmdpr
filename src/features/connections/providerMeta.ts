@@ -69,17 +69,18 @@ export const PROVIDER_META: ProviderMeta[] = [
   {
     id: "gcal",
     name: "Google Calendar",
-    tokenLabel: "OAuth",
-    placeholder: "",
-    createUrl: "https://console.cloud.google.com/apis/credentials",
-    createUrlLabel: "console.cloud.google.com",
+    tokenLabel: "Secret iCal URL (no app / OAuth)",
+    placeholder: "https://calendar.google.com/calendar/ical/…/basic.ics",
+    createUrl: "https://calendar.google.com/calendar/r/settings",
+    createUrlLabel: "Google Calendar settings",
     steps: [
-      "Google Calendar connects through OAuth (browser sign-in), not a pasted key.",
-      "The guided OAuth flow ships in Phase 3 — no setup needed yet.",
+      "Open Google Calendar → Settings → under “Settings for my calendars” pick the calendar you want.",
+      "Scroll to “Integrate calendar” → copy the “Secret address in iCal format” (a private, read-only .ics URL).",
+      "Paste it below and press Connect. FLDSMDPR fetches it directly — no OAuth, no app, read-only.",
+      "Note: if your Workspace admin disabled the secret iCal address, this won't be available and we'd need the OAuth flow instead.",
     ],
-    scopes: ["calendar.readonly"],
-    available: false,
-    unavailableNote: "OAuth flow lands in Phase 3",
+    scopes: ["Read-only (private iCal link)"],
+    available: true,
   },
 ];
 

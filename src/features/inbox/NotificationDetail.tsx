@@ -89,9 +89,12 @@ export function NotificationDetail() {
               <AgentRunButton key={label} n={n} label={label} icon={icon} />
             ))}
             {n.url && (
-              <Button variant="secondary" onClick={() => open(n.url)}>
+              <Button
+                variant={n.source === "gcal" ? "primary" : "secondary"}
+                onClick={() => open(n.url)}
+              >
                 <ExternalLink size={14} />
-                Open
+                {n.source === "gcal" ? "Join" : "Open"}
               </Button>
             )}
             <div className="ml-auto flex gap-2">

@@ -1,3 +1,4 @@
+pub mod gcal;
 pub mod github;
 pub mod linear;
 pub mod slack;
