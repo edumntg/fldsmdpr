@@ -1,0 +1,31 @@
+[package]
+name = "fldsmdpr"
+version = "0.1.0"
+description = "Fully Local Dispatcher for Slack, Messages, Dev-tasks, & Pull-Requests"
+authors = ["Eduardo Montilva"]
+edition = "2021"
+
+[lib]
+# The `_lib` suffix avoids a bin/lib name conflict on Windows.
+name = "fldsmdpr_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.37", features = ["bundled"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
+thiserror = "2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
