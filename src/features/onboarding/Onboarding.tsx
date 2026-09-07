@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, PartyPopper, Rocket, SkipForward, X } from "luci
 import { kvGet, kvSet } from "../../lib/ipc";
 import { PROVIDER_META } from "../connections/providerMeta";
 import { ConnectionCard } from "../connections/ConnectionCard";
+import { SlackConnectionCard } from "../connections/SlackConnectionCard";
 import { useConnections, connectedCount } from "../../stores/connections";
 import { Button } from "../../components/ui/Button";
 import { cn } from "../../lib/utils";
@@ -110,7 +111,12 @@ export function Onboarding() {
             </div>
           )}
 
-          {provider && <ConnectionCard meta={provider} defaultExpanded />}
+          {provider &&
+            (provider.id === "slack" ? (
+              <SlackConnectionCard defaultExpanded />
+            ) : (
+              <ConnectionCard meta={provider} defaultExpanded />
+            ))}
 
           {step === lastStep && (
             <div className="flex flex-col items-center gap-3 py-6 text-center">

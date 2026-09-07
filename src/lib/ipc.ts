@@ -86,6 +86,42 @@ export async function runSync(): Promise<SyncResult> {
   return invoke<SyncResult>("run_sync");
 }
 
+// ---- slack (session-token auth, no app) ----
+
+export interface SlackChannel {
+  id: string;
+  name: string;
+}
+
+export async function slackConnect(xoxc: string, xoxd: string): Promise<string> {
+  if (!inTauri) {
+    if (!xoxc.trim()) throw new Error("Paste your xoxc- token");
+    localStorage.setItem("mock-conn:slack", "preview-account");
+    return "preview-account";
+  }
+  return invoke<string>("slack_connect", { xoxc, xoxd });
+}
+
+export async function slackListChannels(): Promise<SlackChannel[]> {
+  if (!inTauri)
+    return [
+      { id: "C1", name: "#payments" },
+      { id: "C2", name: "#eng-platform" },
+      { id: "C3", name: "#general" },
+    ];
+  return invoke<SlackChannel[]>("slack_list_channels");
+}
+
+export async function slackGetChannels(): Promise<SlackChannel[]> {
+  if (!inTauri) return [];
+  return invoke<SlackChannel[]>("slack_get_channels");
+}
+
+export async function slackSetChannels(channels: SlackChannel[]): Promise<void> {
+  if (!inTauri) return;
+  return invoke("slack_set_channels", { channels });
+}
+
 // ---- agents ----
 
 export async function orcaStatus(): Promise<{ installed: boolean }> {

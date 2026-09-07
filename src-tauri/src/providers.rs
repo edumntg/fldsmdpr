@@ -79,8 +79,12 @@ pub async fn provider_connect(
 
 #[tauri::command]
 pub fn provider_disconnect(db: State<AppDb>, provider: String) -> Result<(), String> {
-    crate::secrets::delete(&token_key(&provider)).map_err(|e| e.to_string())?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    if provider == "slack" {
+        crate::slack::clear(&conn);
+        return Ok(());
+    }
+    crate::secrets::delete(&token_key(&provider)).map_err(|e| e.to_string())?;
     let _ = conn.execute("DELETE FROM kv WHERE key = ?1", [account_kv_key(&provider)]);
     Ok(())
 }
@@ -208,6 +212,24 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
                 synced.push("linear".into());
             }
             Err(e) => errors.push(format!("linear: {e}")),
+        }
+    }
+    if let Ok(Some(auth)) = crate::slack::load_auth() {
+        // Read opted-in channels under a short lock so the guard is dropped
+        // before we await the network fetch.
+        let channels: Vec<(String, String)> = {
+            let conn = db.0.lock().map_err(|e| e.to_string())?;
+            crate::slack::opted_in_channels(&conn)
+                .into_iter()
+                .map(|c| (c.id, c.name))
+                .collect()
+        };
+        match crate::connectors::slack::fetch(&auth, &channels).await {
+            Ok(items) => {
+                fetched.extend(items);
+                synced.push("slack".into());
+            }
+            Err(e) => errors.push(format!("slack: {e}")),
         }
     }
 

@@ -1,5 +1,6 @@
 pub mod github;
 pub mod linear;
+pub mod slack;
 
 use std::collections::HashMap;
 

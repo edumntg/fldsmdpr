@@ -6,6 +6,7 @@ import { useOnboarding } from "../onboarding/Onboarding";
 import { appInfo, type AppInfo } from "../../lib/ipc";
 import { PROVIDER_META } from "../connections/providerMeta";
 import { ConnectionCard } from "../connections/ConnectionCard";
+import { SlackConnectionCard } from "../connections/SlackConnectionCard";
 import { Button } from "../../components/ui/Button";
 import { cn, relativeTime } from "../../lib/utils";
 
@@ -91,9 +92,13 @@ export function SettingsView() {
               </Button>
             </div>
             <div className="flex flex-col gap-2.5">
-              {PROVIDER_META.map((meta) => (
-                <ConnectionCard key={meta.id} meta={meta} />
-              ))}
+              {PROVIDER_META.map((meta) =>
+                meta.id === "slack" ? (
+                  <SlackConnectionCard key={meta.id} />
+                ) : (
+                  <ConnectionCard key={meta.id} meta={meta} />
+                ),
+              )}
             </div>
           </div>
 

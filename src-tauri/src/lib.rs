@@ -5,6 +5,7 @@ mod db;
 mod inbox;
 mod providers;
 mod secrets;
+mod slack;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -40,6 +41,10 @@ pub fn run() {
             inbox::set_notification_state,
             agents::orca_status,
             agents::launch_orca,
+            slack::slack_connect,
+            slack::slack_list_channels,
+            slack::slack_get_channels,
+            slack::slack_set_channels,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
