@@ -50,18 +50,28 @@ export const useSync = create<SyncState>((set, get) => ({
     // Always refresh on app open.
     void get().sync();
 
-    // Daily refresh while the app stays open (checked every 30 s).
+    // Scheduler tick (every 30 s) handles two policies:
+    //  - continuous polling: 60 s while focused, 5 min in background
+    //  - the configurable once-a-day refresh
     if (!schedulerArmed) {
       schedulerArmed = true;
       setInterval(async () => {
+        const { lastSyncAt, refreshTime, sync } = get();
+
+        const staleMs = document.hasFocus() ? 60_000 : 300_000;
+        if (!lastSyncAt || Date.now() - lastSyncAt >= staleMs) {
+          void sync();
+          return;
+        }
+
         const now = new Date();
         const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-        if (hhmm !== get().refreshTime) return;
+        if (hhmm !== refreshTime) return;
         const today = now.toDateString();
         const lastAutoDay = await kvGet("last_auto_sync_day");
         if (lastAutoDay === today) return;
         await kvSet("last_auto_sync_day", today);
-        void get().sync();
+        void sync();
       }, 30_000);
     }
   },
