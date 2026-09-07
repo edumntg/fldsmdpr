@@ -38,33 +38,102 @@ fn dirs_home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
-fn login_shell() -> String {
-    std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into())
+/// Appends a diagnostic line to ~/Library/Logs/FLDSMDPR/slack-ai.log. Logs
+/// mechanics only (timings, exit codes, error strings) — never message content.
+fn ai_log(line: &str) {
+    let Some(home) = dirs_home() else { return };
+    let dir = home.join("Library/Logs/FLDSMDPR");
+    let _ = std::fs::create_dir_all(&dir);
+    let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+    let entry = format!("[{ts}] {line}\n");
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("slack-ai.log"))
+    {
+        let _ = f.write_all(entry.as_bytes());
+    }
 }
 
-/// Runs `claude <script>` through the user's INTERACTIVE login shell (`-ilc`).
+/// Runs claude (by full path) with **stdin closed** and **stdout/stderr
+/// redirected to temp files**, with a hard timeout. Both details are load-
+/// bearing, learned from real hangs when spawned from the GUI app:
+///  - `claude -p` waits for EOF on a non-TTY stdin, so stdin must be null;
+///  - piped stdout/stderr that nobody drains fill up (64KB) and deadlock the
+///    child mid-run — real files have no such limit.
 ///
-/// GUI apps on macOS spawn children with a minimal environment where the claude
-/// CLI hangs or can't authenticate. Going through the interactive login shell
-/// sources the user's rc files (`.zshrc` etc.), restoring the exact environment
-/// their terminal has — where claude works. `envs` are passed to the shell (use
-/// them in `script` as `"$VAR"`, which is injection-safe).
-fn claude_shell(script: &str, envs: &[(&str, &str)]) -> Command {
-    let mut cmd = Command::new(login_shell());
-    cmd.arg("-ilc").arg(format!("claude {script}"));
-    for (k, v) in envs {
-        cmd.env(k, v);
-    }
-    cmd
+/// A shell wrapper (`zsh -ilc`) is also unusable: without a TTY it detaches the
+/// job and returns immediately. Direct spawn is verified to authenticate fine
+/// in the launchd (GUI app) context.
+fn run_claude_to_files(args: &[&str], secs: u64) -> Result<(String, String, bool), String> {
+    use std::fs;
+
+    let bin = claude_bin().ok_or("The `claude` CLI wasn't found on this machine.")?;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let base = std::env::temp_dir().join(format!("fldsmdpr-claude-{}-{nanos}", std::process::id()));
+    let out_path = base.with_extension("out");
+    let err_path = base.with_extension("err");
+    let out_file = fs::File::create(&out_path).map_err(|e| e.to_string())?;
+    let err_file = fs::File::create(&err_path).map_err(|e| e.to_string())?;
+
+    let mut child = Command::new(&bin)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(out_file))
+        .stderr(Stdio::from(err_file))
+        .spawn()
+        .map_err(|e| format!("Couldn't run claude: {e}"))?;
+
+    let start = Instant::now();
+    let status = loop {
+        if let Some(st) = child.try_wait().map_err(|e| e.to_string())? {
+            break st;
+        }
+        if start.elapsed() > Duration::from_secs(secs) {
+            let _ = child.kill();
+            let _ = child.wait();
+            let err_head: String = fs::read_to_string(&err_path)
+                .unwrap_or_default()
+                .chars()
+                .take(300)
+                .collect();
+            ai_log(&format!(
+                "TIMEOUT after {secs}s; args[0..2]={:?}; stderr_head={err_head:?}",
+                &args[..args.len().min(2)]
+            ));
+            let _ = fs::remove_file(&out_path);
+            let _ = fs::remove_file(&err_path);
+            return Err(format!("claude timed out after {secs}s"));
+        }
+        std::thread::sleep(Duration::from_millis(300));
+    };
+
+    let stdout = fs::read_to_string(&out_path).unwrap_or_default();
+    let stderr = fs::read_to_string(&err_path).unwrap_or_default();
+    let _ = fs::remove_file(&out_path);
+    let _ = fs::remove_file(&err_path);
+    ai_log(&format!(
+        "claude {:?} finished in {}s; success={}; stdout={}B stderr={}B",
+        &args[..args.len().min(2)],
+        start.elapsed().as_secs(),
+        status.success(),
+        stdout.len(),
+        stderr.len()
+    ));
+    Ok((stdout, stderr, status.success()))
 }
 
 /// Returns true if the claude CLI reports the Slack MCP as connected.
 pub fn claude_slack_ready() -> bool {
-    let Ok(out) = run_with_timeout(claude_shell("mcp list", &[]), 45) else {
+    let Ok((stdout, _, _)) = run_claude_to_files(&["mcp", "list"], 60) else {
         return false;
     };
-    let text = String::from_utf8_lossy(&out.stdout);
-    text.lines()
+    stdout
+        .lines()
         .any(|l| l.to_lowercase().contains("slack") && l.contains("✔"))
 }
 
@@ -95,66 +164,52 @@ fn build_prompt(about_me: &str) -> String {
     )
 }
 
-/// Runs a command with a hard timeout (claude's JSON output is small, so a
-/// single wait_with_output after exit won't deadlock on the pipe buffer).
-fn run_with_timeout(mut cmd: Command, secs: u64) -> Result<std::process::Output, String> {
-    let mut child = cmd
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Couldn't run claude: {e}"))?;
-    let start = Instant::now();
-    loop {
-        if child.try_wait().map_err(|e| e.to_string())?.is_some() {
-            return child.wait_with_output().map_err(|e| e.to_string());
+/// claude's stdout can contain several concatenated JSON objects; the answer is
+/// the one with `"type":"result"` (kept last if repeated).
+fn result_envelope(raw: &str) -> Option<Value> {
+    let mut envelope = None;
+    for v in serde_json::Deserializer::from_str(raw.trim()).into_iter::<Value>() {
+        match v {
+            Ok(v) if v["type"] == "result" || v.get("result").is_some() => envelope = Some(v),
+            Ok(_) => {}
+            Err(_) => break,
         }
-        if start.elapsed() > Duration::from_secs(secs) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(format!(
-                "claude timed out after {secs}s (Slack analysis took too long)."
-            ));
-        }
-        std::thread::sleep(Duration::from_millis(300));
     }
+    envelope
 }
 
-/// Runs the headless claude query (via the interactive login shell) and parses
-/// items + summaries. claude's JSON goes to a temp file so shell/rc-file noise
-/// on stdout doesn't corrupt it.
+/// Runs the headless claude query and parses items + summaries.
 pub fn fetch_via_claude(about_me: &str) -> Result<SlackAiResult, String> {
     let prompt = build_prompt(about_me);
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let out_path = std::env::temp_dir().join(format!("fldsmdpr-slack-{}-{nanos}.json", std::process::id()));
-    let out_str = out_path.display().to_string();
-
-    let cmd = claude_shell(
-        "-p \"$FLD_PROMPT\" --output-format json --allowedTools mcp__claude_ai_Slack > \"$FLD_OUT\" 2>/dev/null",
-        &[("FLD_PROMPT", &prompt), ("FLD_OUT", &out_str)],
-    );
-    let out = run_with_timeout(cmd, 240)?;
-
-    let raw = std::fs::read_to_string(&out_path).unwrap_or_default();
-    let _ = std::fs::remove_file(&out_path);
+    let (raw, stderr, success) = run_claude_to_files(
+        &[
+            "-p",
+            &prompt,
+            "--output-format",
+            "json",
+            "--allowedTools",
+            "mcp__claude_ai_Slack",
+        ],
+        240,
+    )?;
 
     if raw.trim().is_empty() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        return Err(if err.trim().is_empty() {
-            "claude produced no output (Slack may be unavailable).".into()
+        let head: String = stderr.chars().take(300).collect();
+        return Err(if head.trim().is_empty() {
+            format!("claude produced no output (exit success={success}).")
         } else {
-            format!("claude failed: {}", err.trim())
+            format!("claude failed: {}", head.trim())
         });
     }
 
     // The CLI returns a JSON envelope; the model's answer is in `.result`.
-    let envelope: Value =
-        serde_json::from_str(raw.trim()).map_err(|e| format!("Unexpected claude output: {e}"))?;
+    let envelope = result_envelope(&raw).ok_or("Unexpected claude output (no result envelope).")?;
     // Surface claude's own error (e.g. "Not logged in · Please run /login").
     if envelope["is_error"].as_bool() == Some(true) {
-        return Err(envelope["result"].as_str().unwrap_or("claude reported an error").to_string());
+        return Err(envelope["result"]
+            .as_str()
+            .unwrap_or("claude reported an error")
+            .to_string());
     }
     let result_text = envelope["result"].as_str().unwrap_or("");
     let obj_str = extract_json_object(result_text)
