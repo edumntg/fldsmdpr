@@ -17,8 +17,9 @@ interface SlackAiState {
   setConfig: (enabled: boolean, aboutMe: string) => Promise<void>;
 }
 
-// Slack-via-claude is slow (~1 min/round), so it runs on its own slow cadence.
-const INTERVAL_MS = 5 * 60_000;
+// Slack-via-claude rounds are heavy (2-6 min of agentic Slack reading), so run
+// them sparsely — analyze-on-open plus every 15 min while focused.
+const INTERVAL_MS = 15 * 60_000;
 let armed = false;
 
 export const useSlackAi = create<SlackAiState>((set, get) => ({

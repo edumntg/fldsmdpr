@@ -191,7 +191,9 @@ pub fn fetch_via_claude(about_me: &str) -> Result<SlackAiResult, String> {
             "--allowedTools",
             "mcp__claude_ai_Slack",
         ],
-        240,
+        // The week-summary pass makes many Slack tool calls; observed runs range
+        // ~2-6 min, so give it headroom (the UI shows live status meanwhile).
+        420,
     )?;
 
     if raw.trim().is_empty() {
