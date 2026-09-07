@@ -8,6 +8,8 @@ interface InboxState {
   /** Load from SQLite (inside Tauri) or mock data (browser preview). */
   reload: () => Promise<void>;
   setState: (id: string, state: NotificationState) => void;
+  /** Add a notification found via search (e.g. archived) so it can be selected. */
+  inject: (n: AppNotification) => void;
 }
 
 export const useInbox = create<InboxState>((set) => ({
@@ -22,6 +24,8 @@ export const useInbox = create<InboxState>((set) => ({
     }));
     void setNotificationState(id, state); // persist; no-op in browser preview
   },
+  inject: (n) =>
+    set((s) => (s.items.some((i) => i.id === n.id) ? s : { items: [n, ...s.items] })),
 }));
 
 const sectionSources: Partial<Record<SectionId, AppNotification["source"][]>> = {
