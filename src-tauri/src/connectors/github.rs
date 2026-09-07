@@ -1,6 +1,17 @@
 use super::Fetched;
 use std::collections::HashMap;
 
+pub const SSO_ERROR: &str =
+    "Your GitHub token needs SAML SSO authorization for your organization. \
+Open github.com/settings/tokens, click “Configure SSO” next to the token, and authorize your orgs.";
+
+pub fn sso_required(res: &reqwest::Response) -> bool {
+    res.headers()
+        .get("x-github-sso")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("required"))
+}
+
 /// (search qualifier, notification type, base priority) — first match wins
 /// when the same issue/PR shows up in several categories.
 const CATEGORIES: &[(&str, &str, f64)] = &[
@@ -32,6 +43,12 @@ pub async fn fetch(token: &str) -> Result<Vec<Fetched>, String> {
             .await
             .map_err(|e| format!("GitHub request failed: {e}"))?;
 
+        // An enterprise that enforces SAML SSO answers 200 with empty results
+        // but flags the unauthorized token here — surface it instead of
+        // showing a silently empty inbox.
+        if sso_required(&res) {
+            return Err(SSO_ERROR.into());
+        }
         if !res.status().is_success() {
             return Err(format!("GitHub sync failed (HTTP {})", res.status()));
         }

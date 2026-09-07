@@ -27,6 +27,7 @@ export const PROVIDER_META: ProviderMeta[] = [
       "Choose “Fine-grained token” (recommended) or “Tokens (classic)”.",
       "Give it a name like “FLDSMDPR”, set an expiration, and select the organizations/repos you work in.",
       "Grant the scopes listed below, generate the token, and copy it.",
+      "If your organization enforces SAML SSO: on the tokens page, click “Configure SSO” next to the token and authorize it for each org — without this, org items silently won't appear.",
       "Paste it here and press Connect — it is validated against the GitHub API and stored only in your OS keychain.",
     ],
     scopes: ["repo (or per-repo read access)", "notifications", "read:org"],

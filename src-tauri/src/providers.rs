@@ -104,7 +104,26 @@ async fn validate(provider: &str, token: &str) -> Result<String, String> {
                 return Err(format!("GitHub rejected the token (HTTP {})", res.status()));
             }
             let body: serde_json::Value = res.json().await.map_err(net_err)?;
-            Ok(body["login"].as_str().unwrap_or("connected").to_string())
+            let login = body["login"].as_str().unwrap_or("connected").to_string();
+
+            // A valid token can still be blocked by SAML SSO enforcement —
+            // probe a search request, which carries the x-github-sso header.
+            let probe = client
+                .get("https://api.github.com/search/issues")
+                .query(&[("q", "is:open assignee:@me"), ("per_page", "1")])
+                .bearer_auth(token)
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .send()
+                .await
+                .map_err(net_err)?;
+            if crate::connectors::github::sso_required(&probe) {
+                return Err(format!(
+                    "Token is valid for @{login}, but your organization enforces SAML SSO. \
+                     On github.com/settings/tokens click “Configure SSO” next to the token, \
+                     authorize your orgs, then connect again."
+                ));
+            }
+            Ok(login)
         }
         "linear" => {
             let res = client
