@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, CheckCircle2, XCircle, Bot, TerminalSquare, RefreshCw } from "lucide-react";
 import { useAgents, type AgentRun } from "../../stores/agents";
-import { agentSessionsList, type AgentSession } from "../../lib/ipc";
+import { agentSessionsList, agentSessionUpsert, type AgentSession } from "../../lib/ipc";
 import { SourceBadge } from "../../components/ui/SourceBadge";
 import { Chip } from "../../components/ui/Chip";
 import { cn, relativeTime } from "../../lib/utils";
@@ -49,7 +49,24 @@ export function AgentsView() {
   const load = async () => {
     setLoading(true);
     try {
-      setHistory(await agentSessionsList());
+      const sessions = await agentSessionsList();
+      // Sessions persisted as active but with no live run were orphaned by an
+      // app quit (their PTY died with it) — settle them so they don't spin forever.
+      const liveIds = new Set(Object.values(useAgents.getState().runs).map((r) => r.id));
+      const ACTIVE = new Set(["starting", "working", "thinking"]);
+      setHistory(
+        sessions.map((s) => {
+          if (!ACTIVE.has(s.status) || liveIds.has(s.id)) return s;
+          const settled: AgentSession = {
+            ...s,
+            status: "done",
+            detail: "Interrupted — app was closed",
+            ended_at: s.ended_at ?? Date.now(),
+          };
+          void agentSessionUpsert(settled);
+          return settled;
+        }),
+      );
     } finally {
       setLoading(false);
     }

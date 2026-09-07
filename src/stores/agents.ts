@@ -97,6 +97,7 @@ export const useAgents = create<AgentsState>((set, get) => ({
         prompt: buildAgentPrompt(n, label),
         title: `claude · ${n.meta?.number ?? n.meta?.key ?? repo ?? "task"}`,
         notificationId: n.id,
+        runId: run.id,
       });
       get().setStatus(
         n.id,

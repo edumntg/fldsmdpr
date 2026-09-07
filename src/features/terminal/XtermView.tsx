@@ -6,7 +6,7 @@ import "@xterm/xterm/css/xterm.css";
 import type { TermTab } from "../../stores/terminal";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, onPtyOutput } from "../../lib/pty";
 import { useTheme } from "../../stores/theme";
-import { useAgents } from "../../stores/agents";
+import { useAgents, isActive } from "../../stores/agents";
 
 const themes = {
   dark: {
@@ -26,6 +26,18 @@ const themes = {
     brightBlack: "#8e8e98",
   },
 };
+
+/** Mark the agent run linked to a claude tab as finished, but only if that
+ * exact run is still active — a relaunch may own a newer run for the same
+ * notification. */
+function finishLinkedRun(tab: TermTab, detail: string) {
+  if (tab.kind !== "claude" || !tab.notificationId) return;
+  const { runs, setStatus } = useAgents.getState();
+  const run = runs[tab.notificationId];
+  if (!run || !isActive(run.status)) return;
+  if (tab.runId && run.id !== tab.runId) return;
+  setStatus(tab.notificationId, "done", detail);
+}
 
 /**
  * One xterm.js instance bound to a PTY session. Stays mounted (hidden via
@@ -93,9 +105,7 @@ export function XtermView({ tab, active }: { tab: TermTab; active: boolean }) {
         () => {
           term.write("\r\n\x1b[90m[process exited]\x1b[0m\r\n");
           // Mark the linked agent run finished when a claude session ends.
-          if (tab.kind === "claude" && tab.notificationId) {
-            useAgents.getState().setStatus(tab.notificationId, "done", "Session ended");
-          }
+          finishLinkedRun(tab, "Session ended");
         },
       );
       term.onData((d) => void ptyWrite(id, d));
@@ -113,6 +123,9 @@ export function XtermView({ tab, active }: { tab: TermTab; active: boolean }) {
       unsub?.();
       if (ptyIdRef.current) void ptyKill(ptyIdRef.current);
       term.dispose();
+      // Closing the tab kills the session before the exit event can fire, so
+      // finish the linked run here — otherwise it stays "Working" forever.
+      finishLinkedRun(tab, "Terminal closed");
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

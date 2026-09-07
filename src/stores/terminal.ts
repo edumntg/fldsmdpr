@@ -9,6 +9,8 @@ export interface TermTab {
   seedPrompt?: string;
   /** For claude tabs launched from a notification: links the tab to its agent run. */
   notificationId?: string;
+  /** The exact run this tab belongs to, so closing an old tab can't touch a newer run. */
+  runId?: string;
 }
 
 interface TerminalState {
@@ -23,6 +25,7 @@ interface TerminalState {
     prompt: string;
     title: string;
     notificationId?: string;
+    runId?: string;
   }) => void;
   activate: (id: string) => void;
   close: (id: string) => void;
@@ -53,10 +56,10 @@ export const useTerminal = create<TerminalState>((set, get) => ({
     }));
   },
 
-  openClaude: ({ cwd, prompt, title, notificationId }) => {
+  openClaude: ({ cwd, prompt, title, notificationId, runId }) => {
     const id = tabId();
     set((s) => ({
-      tabs: [...s.tabs, { id, title, kind: "claude", cwd, seedPrompt: prompt, notificationId }],
+      tabs: [...s.tabs, { id, title, kind: "claude", cwd, seedPrompt: prompt, notificationId, runId }],
       activeId: id,
       open: true,
     }));
