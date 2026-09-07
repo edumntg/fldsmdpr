@@ -155,16 +155,19 @@ fn build_prompt(about_me: &str) -> String {
         about_me.trim().to_string()
     };
     format!(
-        "You have Slack access via MCP tools. Do TWO things, inspecting ONLY recent messages (never older than 7 days):\n\n\
+        "You have Slack access via MCP tools. Do THREE things, inspecting ONLY recent messages (never older than 7 days):\n\n\
          1) LAST 24 HOURS — actionable items that need my attention: @-mentions of me, DMs to me, thread replies where I'm involved, and messages relevant to me even without an @-mention (about services I own, my projects, my name, or decisions affecting my team).\n\n\
          2) SUMMARIES — a concise summary of the LAST 24 HOURS (\"daySummary\") and of the LAST 7 DAYS MAX (\"weekSummary\") across the channels and DMs relevant to me: key themes, decisions made, and things awaiting my follow-up. Do NOT read messages older than 7 days.\n\n\
+         3) TASKS — concrete work items I should own, extracted from those conversations: bugs reported to me, fixes or code changes requested of me, reviews or investigations asked of me. Not FYIs, not decisions, not other people's work.\n\n\
          My profile: {profile}\n\n\
          Respond with ONLY a JSON object as the final content:\n\
          {{\"items\":[{{\"channel\":\"\",\"from\":\"\",\"text\":\"\",\"ts\":\"\",\"permalink\":\"\",\"kind\":\"explicit\",\"reason\":\"\"}}],\
-\"daySummary\":[{{\"text\":\"\",\"channel\":\"\",\"actionable\":false}}],\"weekSummary\":[{{\"text\":\"\",\"channel\":\"\",\"actionable\":false}}]}}\n\
+\"daySummary\":[{{\"text\":\"\",\"channel\":\"\",\"actionable\":false}}],\"weekSummary\":[{{\"text\":\"\",\"channel\":\"\",\"actionable\":false}}],\
+\"tasks\":[{{\"key\":\"\",\"title\":\"\",\"detail\":\"\",\"channel\":\"\",\"from\":\"\",\"ts\":\"\",\"permalink\":\"\"}}]}}\n\
          - items: last 24h only. \"kind\" is \"explicit\" for @mentions/DMs/thread replies, or \"implicit\" for inferred relevance (short justification in \"reason\"). \"text\" trimmed ~200 chars. \"ts\" = Slack message timestamp. Skip bots. Max 25 items.\n\
          - daySummary: 3-8 granular, self-contained bullet items covering the last 24h. weekSummary: 3-10 items covering the last 7 days max (themes, decisions, pending follow-ups). Each item: \"text\" (1-2 sentences), \"channel\" where it happened, and \"actionable\": true ONLY if it describes concrete work I could delegate to a coding agent (a bug, fix request, code task) — false for FYI/decisions/social.\n\
-         If nothing notable, return one item saying so. If Slack is unavailable, return {{\"items\":[],\"daySummary\":[],\"weekSummary\":[]}}."
+         - tasks: max 10, last 7 days. \"key\" is a short kebab-case slug derived from the task's core subject (e.g. \"fix-payout-webhook-500s\") — the SAME underlying task must always produce the SAME key across runs, so never include dates or message ids in it. \"title\" is imperative (\"Fix …\", \"Review …\"), \"detail\" 1-2 sentences of context, \"ts\" = timestamp of the triggering message. Only real, still-open asks — don't invent tasks and skip anything already resolved in the thread.\n\
+         If nothing notable, return one item saying so. If Slack is unavailable, return {{\"items\":[],\"daySummary\":[],\"weekSummary\":[],\"tasks\":[]}}."
     )
 }
 
@@ -281,11 +284,74 @@ pub fn fetch_via_claude(about_me: &str) -> Result<SlackAiResult, String> {
             }),
         });
     }
+    // Tasks: concrete asks extracted from conversations become inbox tickets.
+    // The claude-derived slug keys them, so re-analysis updates the same row
+    // instead of duplicating it (and upsert never resurrects a done one).
+    for t in obj["tasks"].as_array().cloned().unwrap_or_default().iter() {
+        let title = t["title"].as_str().unwrap_or("").trim().to_string();
+        if title.is_empty() {
+            continue;
+        }
+        let key = slugify(t["key"].as_str().unwrap_or(&title));
+        if key.is_empty() {
+            continue;
+        }
+        let channel = t["channel"].as_str().unwrap_or("Slack").to_string();
+        let from = t["from"].as_str().unwrap_or("").to_string();
+        let created_ms = t["ts"]
+            .as_str()
+            .and_then(|ts| ts.split('.').next())
+            .and_then(|s| s.parse::<i64>().ok())
+            .map(|s| s * 1000)
+            .filter(|ms| *ms > 0)
+            .unwrap_or_else(now_ms);
+
+        let mut meta = HashMap::new();
+        meta.insert("channel".into(), channel.clone());
+        if !from.is_empty() {
+            meta.insert("from".into(), from);
+        }
+
+        out_items.push(Fetched {
+            id: format!("slack:task:{key}"),
+            source: "slack",
+            ntype: "action_item",
+            title,
+            snippet: t["detail"].as_str().unwrap_or("").to_string(),
+            url: t["permalink"].as_str().map(String::from),
+            created_at: created_ms,
+            priority: 80.0,
+            meta,
+            relevance: None,
+        });
+    }
+
     Ok(SlackAiResult {
         items: out_items,
         day_summary,
         week_summary,
     })
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Normalizes a claude-provided task key into a stable id fragment.
+fn slugify(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars().take(80) {
+        let lc = c.to_ascii_lowercase();
+        if lc.is_ascii_alphanumeric() {
+            out.push(lc);
+        } else if !out.ends_with('-') && !out.is_empty() {
+            out.push('-');
+        }
+    }
+    out.trim_matches('-').to_string()
 }
 
 /// Extracts the first balanced JSON value starting at `open`/`close` bracket from
