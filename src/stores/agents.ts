@@ -21,7 +21,12 @@ export const isActive = (s: AgentStatus) => s === "starting" || s === "working" 
 
 interface AgentsState {
   runs: Record<string, AgentRun>;
-  launch: (n: AppNotification, label: string, runner: "orca" | "claude") => Promise<void>;
+  launch: (
+    n: AppNotification,
+    label: string,
+    runner: "orca" | "claude",
+    opts?: { repoId?: string; repoName?: string },
+  ) => Promise<void>;
   setStatus: (notificationId: string, status: AgentStatus, detail?: string) => void;
   clear: (notificationId: string) => void;
 }
@@ -53,8 +58,8 @@ export const useAgents = create<AgentsState>((set, get) => ({
       return { runs };
     }),
 
-  launch: async (n, label, runner) => {
-    const repo = n.meta?.repo;
+  launch: async (n, label, runner, opts) => {
+    const repo = opts?.repoName ?? n.meta?.repo;
     set((s) => ({
       runs: {
         ...s.runs,
@@ -79,16 +84,17 @@ export const useAgents = create<AgentsState>((set, get) => ({
     }
 
     // Orca
-    if (!repo) {
-      get().setStatus(n.id, "failed", "No repository to work in");
+    if (!repo && !opts?.repoId) {
+      get().setStatus(n.id, "failed", "No repository selected");
       return;
     }
     try {
       const res = await launchOrca({
         name: worktreeName(n),
-        repo,
+        repo: repo ?? "",
         prompt: buildAgentPrompt(n, label),
         comment: n.url,
+        repoId: opts?.repoId,
       });
       get().setStatus(n.id, "working", `Orca worktree · ${res.worktree}`);
     } catch (e) {

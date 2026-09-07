@@ -113,23 +113,60 @@ pub fn repo_local_path(repo: String) -> Option<String> {
 }
 
 #[derive(Serialize)]
+pub struct OrcaRepo {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub remote: Option<String>,
+}
+
+/// Lists repos registered in Orca (for the "Run in Orca" repo picker).
+#[tauri::command]
+pub fn orca_repos() -> Result<Vec<OrcaRepo>, String> {
+    let bin = orca_bin().ok_or("Orca CLI not found — is Orca installed?")?;
+    let body = run_orca_json(&bin, &["repo", "list", "--json"])?;
+    let repos = body["result"]["repos"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    Ok(repos
+        .iter()
+        .filter_map(|r| {
+            Some(OrcaRepo {
+                id: r["id"].as_str()?.to_string(),
+                name: r["displayName"].as_str().unwrap_or("").to_string(),
+                path: r["path"].as_str().unwrap_or("").to_string(),
+                remote: r["gitRemoteIdentity"]["canonicalKey"]
+                    .as_str()
+                    .map(String::from),
+            })
+        })
+        .collect())
+}
+
+#[derive(Serialize)]
 pub struct LaunchResult {
     pub worktree: String,
 }
 
 /// Creates an Orca-managed worktree with a Claude agent pre-seeded with the
-/// task prompt, and reveals it in the Orca app.
+/// task prompt, and reveals it in the Orca app. `repo_id` (from the picker)
+/// wins; otherwise the repo is resolved from the `repo` slug.
 #[tauri::command]
 pub async fn launch_orca(
     name: String,
     repo: String,
     prompt: String,
     comment: Option<String>,
+    repo_id: Option<String>,
 ) -> Result<LaunchResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let bin = orca_bin().ok_or("Orca CLI not found — is Orca installed?")?;
-        let repo_id = resolve_repo_id(&bin, &repo)?;
-        let repo_sel = format!("id:{repo_id}");
+        let resolved = match repo_id {
+            Some(id) if !id.is_empty() => id,
+            _ => resolve_repo_id(&bin, &repo)?,
+        };
+        let repo_sel = format!("id:{resolved}");
 
         let mut args: Vec<&str> = vec![
             "worktree",

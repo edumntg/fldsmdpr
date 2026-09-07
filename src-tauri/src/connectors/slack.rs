@@ -2,6 +2,8 @@ use super::{Fetched, FetchedRelevance};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 // ============================================================================
 // Slack via headless `claude` + the official Slack MCP connector.
@@ -36,20 +38,48 @@ fn dirs_home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
+/// PATH augmented with the usual CLI locations, since GUI apps on macOS spawn
+/// children with a minimal PATH. Prepended to the inherited env.
+fn augmented_path() -> String {
+    let mut dirs: Vec<String> = Vec::new();
+    if let Some(home) = dirs_home() {
+        dirs.push(home.join(".local/bin").display().to_string());
+    }
+    dirs.extend(["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].map(String::from));
+    if let Ok(existing) = std::env::var("PATH") {
+        dirs.push(existing);
+    }
+    dirs.join(":")
+}
+
+/// Builds a claude Command by full path, inheriting the app's environment (so
+/// its login/keychain access carries over) plus an augmented PATH.
+fn claude_command(extra_args: &[&str]) -> Option<Command> {
+    let bin = claude_bin()?;
+    let mut cmd = Command::new(bin);
+    cmd.args(extra_args).env("PATH", augmented_path());
+    Some(cmd)
+}
+
 /// Returns true if the claude CLI reports the Slack MCP as connected.
 pub fn claude_slack_ready() -> bool {
-    let Some(bin) = claude_bin() else {
+    let Some(cmd) = claude_command(&["mcp", "list"]) else {
         return false;
     };
-    let Ok(out) = std::process::Command::new(bin)
-        .args(["mcp", "list"])
-        .output()
-    else {
+    let Ok(out) = run_with_timeout(cmd, 30) else {
         return false;
     };
     let text = String::from_utf8_lossy(&out.stdout);
     text.lines()
         .any(|l| l.to_lowercase().contains("slack") && l.contains("✔"))
+}
+
+/// Result of a Slack analysis round: actionable items (last 24h) plus a day and
+/// week summary.
+pub struct SlackAiResult {
+    pub items: Vec<Fetched>,
+    pub day_summary: String,
+    pub week_summary: String,
 }
 
 fn build_prompt(about_me: &str) -> String {
@@ -59,35 +89,66 @@ fn build_prompt(about_me: &str) -> String {
         about_me.trim().to_string()
     };
     format!(
-        "You have Slack access via MCP tools. Find items from the last 24 hours that need my attention:\n\
-         1) messages that @-mention me; 2) DMs to me; 3) threads I'm in with new replies;\n\
-         4) messages relevant to me even without an @-mention — about services I own, my projects, my name, or decisions affecting my team.\n\n\
+        "You have Slack access via MCP tools. Do TWO things, inspecting ONLY recent messages (never older than 7 days):\n\n\
+         1) LAST 24 HOURS — actionable items that need my attention: @-mentions of me, DMs to me, thread replies where I'm involved, and messages relevant to me even without an @-mention (about services I own, my projects, my name, or decisions affecting my team).\n\n\
+         2) SUMMARIES — a concise summary of the LAST 24 HOURS (\"daySummary\") and of the LAST 7 DAYS MAX (\"weekSummary\") across the channels and DMs relevant to me: key themes, decisions made, and things awaiting my follow-up. Do NOT read messages older than 7 days.\n\n\
          My profile: {profile}\n\n\
-         Respond with ONLY a JSON array as the final content. Each item exactly:\n\
-         {{\"channel\":\"\",\"from\":\"\",\"text\":\"\",\"ts\":\"\",\"permalink\":\"\",\"kind\":\"explicit\",\"reason\":\"\"}}\n\
-         - \"kind\" is \"explicit\" for @mentions/DMs/thread replies, or \"implicit\" for relevance you inferred (put a short justification in \"reason\").\n\
-         - \"text\": the message trimmed to ~200 chars. \"ts\": the Slack message timestamp.\n\
-         Skip automated/bot messages. Max 25 items. If Slack is unavailable, return []."
+         Respond with ONLY a JSON object as the final content:\n\
+         {{\"items\":[{{\"channel\":\"\",\"from\":\"\",\"text\":\"\",\"ts\":\"\",\"permalink\":\"\",\"kind\":\"explicit\",\"reason\":\"\"}}],\"daySummary\":\"\",\"weekSummary\":\"\"}}\n\
+         - items: last 24h only. \"kind\" is \"explicit\" for @mentions/DMs/thread replies, or \"implicit\" for inferred relevance (short justification in \"reason\"). \"text\" trimmed ~200 chars. \"ts\" = Slack message timestamp. Skip bots. Max 25 items.\n\
+         - daySummary / weekSummary: 2-5 concise sentences each; you may use \"- \" bullet lines. If nothing notable, say so briefly.\n\
+         If Slack is unavailable, return {{\"items\":[],\"daySummary\":\"\",\"weekSummary\":\"\"}}."
     )
 }
 
-/// Runs the headless claude query and parses items into notifications.
-pub fn fetch_via_claude(about_me: &str) -> Result<Vec<Fetched>, String> {
-    let bin = claude_bin().ok_or("The `claude` CLI wasn't found on this machine.")?;
-    let out = std::process::Command::new(&bin)
-        .args([
-            "-p",
-            &build_prompt(about_me),
-            "--output-format",
-            "json",
-            "--allowedTools",
-            "mcp__claude_ai_Slack",
-        ])
-        .output()
+/// Runs a command with a hard timeout (claude's JSON output is small, so a
+/// single wait_with_output after exit won't deadlock on the pipe buffer).
+fn run_with_timeout(mut cmd: Command, secs: u64) -> Result<std::process::Output, String> {
+    let mut child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| format!("Couldn't run claude: {e}"))?;
+    let start = Instant::now();
+    loop {
+        if child.try_wait().map_err(|e| e.to_string())?.is_some() {
+            return child.wait_with_output().map_err(|e| e.to_string());
+        }
+        if start.elapsed() > Duration::from_secs(secs) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "claude timed out after {secs}s (Slack analysis took too long)."
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(300));
+    }
+}
+
+/// Runs the headless claude query and parses items + summaries.
+pub fn fetch_via_claude(about_me: &str) -> Result<SlackAiResult, String> {
+    let prompt = build_prompt(about_me);
+    let cmd = claude_command(&[
+        "-p",
+        &prompt,
+        "--output-format",
+        "json",
+        "--allowedTools",
+        "mcp__claude_ai_Slack",
+    ])
+    .ok_or("The `claude` CLI wasn't found on this machine.")?;
+    let out = run_with_timeout(cmd, 240)?;
 
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        // Surface the model's own error message (e.g. "Not logged in") if present.
+        if let Some(msg) = serde_json::from_str::<Value>(stdout.trim())
+            .ok()
+            .and_then(|v| v["result"].as_str().map(str::to_string))
+        {
+            return Err(msg);
+        }
         return Err(format!("claude failed: {}", err.trim()));
     }
 
@@ -96,9 +157,13 @@ pub fn fetch_via_claude(about_me: &str) -> Result<Vec<Fetched>, String> {
     let envelope: Value = serde_json::from_str(stdout.trim())
         .map_err(|e| format!("Unexpected claude output: {e}"))?;
     let result_text = envelope["result"].as_str().unwrap_or("");
-    let array_str = extract_json_array(result_text)
-        .ok_or("Claude didn't return a JSON array (Slack may be unavailable).")?;
-    let items: Vec<Value> = serde_json::from_str(array_str).map_err(|e| e.to_string())?;
+    let obj_str = extract_json_object(result_text)
+        .ok_or("Claude didn't return a JSON object (Slack may be unavailable).")?;
+    let obj: Value = serde_json::from_str(obj_str).map_err(|e| e.to_string())?;
+
+    let day_summary = obj["daySummary"].as_str().unwrap_or("").to_string();
+    let week_summary = obj["weekSummary"].as_str().unwrap_or("").to_string();
+    let items = obj["items"].as_array().cloned().unwrap_or_default();
 
     let mut out_items = Vec::new();
     for it in &items {
@@ -149,13 +214,18 @@ pub fn fetch_via_claude(about_me: &str) -> Result<Vec<Fetched>, String> {
             }),
         });
     }
-    Ok(out_items)
+    Ok(SlackAiResult {
+        items: out_items,
+        day_summary,
+        week_summary,
+    })
 }
 
-/// Extracts the first balanced JSON array from text that may be wrapped in prose
-/// or ```json fences (the org compliance layer can prepend a warning).
-fn extract_json_array(s: &str) -> Option<&str> {
-    let start = s.find('[')?;
+/// Extracts the first balanced JSON value starting at `open`/`close` bracket from
+/// text that may be wrapped in prose or ```json fences (the org compliance layer
+/// can prepend a warning).
+fn extract_balanced(s: &str, open: char, close: char) -> Option<&str> {
+    let start = s.find(open)?;
     let bytes = s.as_bytes();
     let mut depth = 0i32;
     let mut in_str = false;
@@ -172,19 +242,22 @@ fn extract_json_array(s: &str) -> Option<&str> {
             }
             continue;
         }
-        match c {
-            '"' => in_str = true,
-            '[' => depth += 1,
-            ']' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(&s[start..=i]);
-                }
+        if c == '"' {
+            in_str = true;
+        } else if c == open {
+            depth += 1;
+        } else if c == close {
+            depth -= 1;
+            if depth == 0 {
+                return Some(&s[start..=i]);
             }
-            _ => {}
         }
     }
     None
+}
+
+fn extract_json_object(s: &str) -> Option<&str> {
+    extract_balanced(s, '{', '}')
 }
 
 /// Slack credentials. `cookie` holds the `xoxd-…` value for session-token

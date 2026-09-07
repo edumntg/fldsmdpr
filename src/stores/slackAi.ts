@@ -9,6 +9,8 @@ interface SlackAiState {
   running: boolean;
   lastSyncAt: number | null;
   lastError: string | null;
+  daySummary: string;
+  weekSummary: string;
   loaded: boolean;
   init: () => Promise<void>;
   sync: () => Promise<void>;
@@ -26,6 +28,8 @@ export const useSlackAi = create<SlackAiState>((set, get) => ({
   running: false,
   lastSyncAt: null,
   lastError: null,
+  daySummary: "",
+  weekSummary: "",
   loaded: false,
 
   init: async () => {
@@ -35,6 +39,8 @@ export const useSlackAi = create<SlackAiState>((set, get) => ({
       enabled: s.enabled,
       aboutMe: s.about_me,
       lastSyncAt: s.last_sync_at,
+      daySummary: s.day_summary,
+      weekSummary: s.week_summary,
       loaded: true,
     });
 
@@ -55,7 +61,13 @@ export const useSlackAi = create<SlackAiState>((set, get) => ({
     try {
       await slackAiSync();
       await useInbox.getState().reload();
-      set({ lastSyncAt: Date.now() });
+      // Refresh summaries + last-sync from the freshly-stored status.
+      const s = await slackAiStatus();
+      set({
+        lastSyncAt: s.last_sync_at ?? Date.now(),
+        daySummary: s.day_summary,
+        weekSummary: s.week_summary,
+      });
     } catch (e) {
       set({ lastError: e instanceof Error ? e.message : String(e) });
     } finally {

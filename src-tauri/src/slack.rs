@@ -157,6 +157,8 @@ pub fn clear(conn: &rusqlite::Connection) {
 const AI_ENABLED_KV: &str = "slack:ai_enabled";
 const ABOUT_ME_KV: &str = "slack:about_me";
 const AI_LAST_SYNC_KV: &str = "slack:ai_last_sync";
+const DAY_SUMMARY_KV: &str = "slack:day_summary";
+const WEEK_SUMMARY_KV: &str = "slack:week_summary";
 
 fn kv_get(conn: &rusqlite::Connection, key: &str) -> Option<String> {
     conn.query_row("SELECT value FROM kv WHERE key = ?1", [key], |r| r.get(0))
@@ -179,6 +181,8 @@ pub struct SlackAiStatus {
     pub enabled: bool,
     pub about_me: String,
     pub last_sync_at: Option<i64>,
+    pub day_summary: String,
+    pub week_summary: String,
 }
 
 #[tauri::command]
@@ -189,6 +193,8 @@ pub fn slack_ai_status(db: State<AppDb>) -> Result<SlackAiStatus, String> {
         enabled: kv_get(&conn, AI_ENABLED_KV).as_deref() == Some("1"),
         about_me: kv_get(&conn, ABOUT_ME_KV).unwrap_or_default(),
         last_sync_at: kv_get(&conn, AI_LAST_SYNC_KV).and_then(|s| s.parse().ok()),
+        day_summary: kv_get(&conn, DAY_SUMMARY_KV).unwrap_or_default(),
+        week_summary: kv_get(&conn, WEEK_SUMMARY_KV).unwrap_or_default(),
     })
 }
 
@@ -224,7 +230,7 @@ pub async fn slack_ai_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Resul
         return Ok(0);
     }
 
-    let items = tauri::async_runtime::spawn_blocking(move || {
+    let result = tauri::async_runtime::spawn_blocking(move || {
         crate::connectors::slack::fetch_via_claude(&about_me)
     })
     .await
@@ -237,8 +243,10 @@ pub async fn slack_ai_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Resul
 
     let new_count = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        let n = crate::inbox::upsert(&conn, &items)?;
+        let n = crate::inbox::upsert(&conn, &result.items)?;
         kv_put(&conn, AI_LAST_SYNC_KV, &now.to_string());
+        kv_put(&conn, DAY_SUMMARY_KV, &result.day_summary);
+        kv_put(&conn, WEEK_SUMMARY_KV, &result.week_summary);
         n
     };
 

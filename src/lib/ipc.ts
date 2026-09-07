@@ -117,10 +117,20 @@ export interface SlackAiStatus {
   enabled: boolean;
   about_me: string;
   last_sync_at: number | null;
+  day_summary: string;
+  week_summary: string;
 }
 
 export async function slackAiStatus(): Promise<SlackAiStatus> {
-  if (!inTauri) return { available: true, enabled: false, about_me: "", last_sync_at: null };
+  if (!inTauri)
+    return {
+      available: true,
+      enabled: false,
+      about_me: "",
+      last_sync_at: null,
+      day_summary: "",
+      week_summary: "",
+    };
   return invoke<SlackAiStatus>("slack_ai_status");
 }
 
@@ -187,11 +197,28 @@ export async function orcaStatus(): Promise<{ installed: boolean }> {
   return invoke<{ installed: boolean }>("orca_status");
 }
 
+export interface OrcaRepo {
+  id: string;
+  name: string;
+  path: string;
+  remote: string | null;
+}
+
+export async function orcaRepos(): Promise<OrcaRepo[]> {
+  if (!inTauri)
+    return [
+      { id: "r1", name: "core-api", path: "/Users/you/dev/core-api", remote: "github.com/acme-corp/core-api" },
+      { id: "r2", name: "aurora-api", path: "/Users/you/dev/aurora-api", remote: "github.com/acme-corp/aurora-api" },
+    ];
+  return invoke<OrcaRepo[]>("orca_repos");
+}
+
 export async function launchOrca(args: {
   name: string;
   repo: string;
   prompt: string;
   comment?: string;
+  repoId?: string;
 }): Promise<{ worktree: string }> {
   if (!inTauri) {
     await new Promise((r) => setTimeout(r, 600));

@@ -43,6 +43,7 @@ pub fn run() {
             inbox::list_notifications,
             inbox::set_notification_state,
             agents::orca_status,
+            agents::orca_repos,
             agents::launch_orca,
             agents::repo_local_path,
             pty::pty_spawn,

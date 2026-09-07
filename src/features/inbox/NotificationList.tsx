@@ -24,6 +24,7 @@ import { SourceBadge, sourceLabel } from "../../components/ui/SourceBadge";
 import { Chip } from "../../components/ui/Chip";
 import { IconButton } from "../../components/ui/IconButton";
 import { AgentStatusRow } from "../agents/AgentStatusRow";
+import { SlackOverview } from "./SlackOverview";
 
 /** Default agent action label per notification type (for the context menu). */
 function defaultAction(type: NotificationType): string {
@@ -222,6 +223,7 @@ export function NotificationList() {
       )}
 
       <div className="flex-1 overflow-y-auto px-2.5 pb-3">
+        {section === "slack" && <SlackOverview />}
         {visible.length === 0 ? (
           <EmptyState />
         ) : (
