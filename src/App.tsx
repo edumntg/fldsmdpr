@@ -7,12 +7,14 @@ import { CommandPalette } from "./features/palette/CommandPalette";
 import { Onboarding, useOnboarding } from "./features/onboarding/Onboarding";
 import { TerminalDrawer } from "./features/terminal/TerminalDrawer";
 import { AgentsView } from "./features/agents/AgentsView";
+import { TodayView } from "./features/today/TodayView";
 import { useUi } from "./stores/ui";
 import { useTheme } from "./stores/theme";
 import { useSync } from "./stores/sync";
 import { useConnections } from "./stores/connections";
 import { useInbox } from "./stores/inbox";
 import { useSlackAi } from "./stores/slackAi";
+import { useAiSources } from "./stores/aiSources";
 
 export default function App() {
   const section = useUi((s) => s.section);
@@ -21,6 +23,7 @@ export default function App() {
   const reloadInbox = useInbox((s) => s.reload);
   const refreshConnections = useConnections((s) => s.refresh);
   const initSlackAi = useSlackAi((s) => s.init);
+  const initAiSources = useAiSources((s) => s.init);
   const maybeAutoStartOnboarding = useOnboarding((s) => s.maybeAutoStart);
 
   useEffect(() => {
@@ -29,8 +32,9 @@ export default function App() {
     void initSync(); // …then refresh-on-open + daily scheduler
     void refreshConnections();
     void initSlackAi(); // Slack-via-claude: analyze-on-open + slow scheduler
+    void initAiSources(); // Notion/Granola-via-claude: analyze-on-open + hourly
     void maybeAutoStartOnboarding();
-  }, [initTheme, reloadInbox, initSync, refreshConnections, initSlackAi, maybeAutoStartOnboarding]);
+  }, [initTheme, reloadInbox, initSync, refreshConnections, initSlackAi, initAiSources, maybeAutoStartOnboarding]);
 
   return (
     <div className="flex h-full flex-col">
@@ -40,6 +44,8 @@ export default function App() {
           <SettingsView />
         ) : section === "agents" ? (
           <AgentsView />
+        ) : section === "today" ? (
+          <TodayView />
         ) : (
           <>
             <NotificationList />

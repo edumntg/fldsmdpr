@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { kvGet, kvSet, runSync } from "../lib/ipc";
+import { kvGet, kvSet, runSync, morningBriefing } from "../lib/ipc";
 import { useInbox } from "./inbox";
 
 interface SyncState {
@@ -73,7 +73,9 @@ export const useSync = create<SyncState>((set, get) => ({
         const lastAutoDay = await kvGet("last_auto_sync_day");
         if (lastAutoDay === today) return;
         await kvSet("last_auto_sync_day", today);
-        void sync();
+        // Daily refresh, then a native "your day at a glance" notification.
+        await sync();
+        void morningBriefing();
       }, 30_000);
     }
   },

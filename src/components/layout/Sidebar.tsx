@@ -10,6 +10,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Search,
+  Sunrise,
 } from "lucide-react";
 import type { SectionId } from "../../lib/types";
 import { useUi } from "../../stores/ui";
@@ -23,6 +24,7 @@ import { Kbd } from "../ui/Kbd";
 import { IconButton } from "../ui/IconButton";
 
 const NAV: { id: SectionId; label: string; icon: typeof Inbox }[] = [
+  { id: "today", label: "Today", icon: Sunrise },
   { id: "inbox", label: "Inbox", icon: Inbox },
   { id: "prs", label: "Pull Requests", icon: GitPullRequest },
   { id: "slack", label: "Slack", icon: MessageSquare },
@@ -80,7 +82,8 @@ export function Sidebar() {
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2">
         {NAV.map(({ id, label, icon: Icon }) => {
           const active = section === id;
-          const unread = unreadCount(items, id);
+          // Today is a digest, not a queue — no unread badge.
+          const unread = id === "today" ? 0 : unreadCount(items, id);
           return (
             <button
               key={id}

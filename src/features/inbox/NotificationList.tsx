@@ -36,7 +36,10 @@ function defaultAction(type: NotificationType): string {
       return "Fix with agent";
     case "ticket":
     case "assigned":
+    case "action_item":
       return "Run agent on this task";
+    case "incident":
+      return "Fix with agent";
     default:
       return "Draft reply";
   }
@@ -59,6 +62,7 @@ interface MenuState {
 }
 
 const sectionTitles: Record<SectionId, string> = {
+  today: "Today",
   inbox: "Inbox",
   prs: "Pull Requests",
   slack: "Slack",
@@ -124,6 +128,10 @@ function typeLabel(n: AppNotification): string {
       return "Tickets";
     case "event":
       return "Events";
+    case "incident":
+      return "Incidents";
+    case "action_item":
+      return "Action items";
     default:
       return sourceLabel(n.source);
   }
