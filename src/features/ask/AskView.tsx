@@ -6,10 +6,10 @@ import { IconButton } from "../../components/ui/IconButton";
 import { cn } from "../../lib/utils";
 
 const SUGGESTIONS = [
-  "Dame un resumen de las últimas 3 horas",
-  "¿Qué es lo más urgente ahora mismo?",
-  "¿Qué me perdí hoy?",
-  "¿Qué terminaron los agentes esta semana?",
+  "Summarize the last 3 hours",
+  "What's most urgent right now?",
+  "What did I miss today?",
+  "What did the agents finish this week?",
 ];
 
 /** Chat with claude over everything the app knows: notifications, tickets,
@@ -106,7 +106,7 @@ export function AskView() {
                 submit();
               }
             }}
-            placeholder="e.g. “Dame un resumen de las últimas 3 horas”  ·  Enter to send"
+            placeholder="e.g. “Summarize the last 3 hours”  ·  Enter to send"
             rows={2}
             className="max-h-40 flex-1 resize-none rounded-xl border border-line bg-surface-2 px-3.5 py-2.5 text-[13.5px] leading-5.5 outline-none placeholder:text-ink-3 focus:border-accent"
           />
