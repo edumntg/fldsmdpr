@@ -38,35 +38,29 @@ fn dirs_home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
-/// PATH augmented with the usual CLI locations, since GUI apps on macOS spawn
-/// children with a minimal PATH. Prepended to the inherited env.
-fn augmented_path() -> String {
-    let mut dirs: Vec<String> = Vec::new();
-    if let Some(home) = dirs_home() {
-        dirs.push(home.join(".local/bin").display().to_string());
-    }
-    dirs.extend(["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].map(String::from));
-    if let Ok(existing) = std::env::var("PATH") {
-        dirs.push(existing);
-    }
-    dirs.join(":")
+fn login_shell() -> String {
+    std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into())
 }
 
-/// Builds a claude Command by full path, inheriting the app's environment (so
-/// its login/keychain access carries over) plus an augmented PATH.
-fn claude_command(extra_args: &[&str]) -> Option<Command> {
-    let bin = claude_bin()?;
-    let mut cmd = Command::new(bin);
-    cmd.args(extra_args).env("PATH", augmented_path());
-    Some(cmd)
+/// Runs `claude <script>` through the user's INTERACTIVE login shell (`-ilc`).
+///
+/// GUI apps on macOS spawn children with a minimal environment where the claude
+/// CLI hangs or can't authenticate. Going through the interactive login shell
+/// sources the user's rc files (`.zshrc` etc.), restoring the exact environment
+/// their terminal has — where claude works. `envs` are passed to the shell (use
+/// them in `script` as `"$VAR"`, which is injection-safe).
+fn claude_shell(script: &str, envs: &[(&str, &str)]) -> Command {
+    let mut cmd = Command::new(login_shell());
+    cmd.arg("-ilc").arg(format!("claude {script}"));
+    for (k, v) in envs {
+        cmd.env(k, v);
+    }
+    cmd
 }
 
 /// Returns true if the claude CLI reports the Slack MCP as connected.
 pub fn claude_slack_ready() -> bool {
-    let Some(cmd) = claude_command(&["mcp", "list"]) else {
-        return false;
-    };
-    let Ok(out) = run_with_timeout(cmd, 30) else {
+    let Ok(out) = run_with_timeout(claude_shell("mcp list", &[]), 45) else {
         return false;
     };
     let text = String::from_utf8_lossy(&out.stdout);
@@ -125,37 +119,43 @@ fn run_with_timeout(mut cmd: Command, secs: u64) -> Result<std::process::Output,
     }
 }
 
-/// Runs the headless claude query and parses items + summaries.
+/// Runs the headless claude query (via the interactive login shell) and parses
+/// items + summaries. claude's JSON goes to a temp file so shell/rc-file noise
+/// on stdout doesn't corrupt it.
 pub fn fetch_via_claude(about_me: &str) -> Result<SlackAiResult, String> {
     let prompt = build_prompt(about_me);
-    let cmd = claude_command(&[
-        "-p",
-        &prompt,
-        "--output-format",
-        "json",
-        "--allowedTools",
-        "mcp__claude_ai_Slack",
-    ])
-    .ok_or("The `claude` CLI wasn't found on this machine.")?;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let out_path = std::env::temp_dir().join(format!("fldsmdpr-slack-{}-{nanos}.json", std::process::id()));
+    let out_str = out_path.display().to_string();
+
+    let cmd = claude_shell(
+        "-p \"$FLD_PROMPT\" --output-format json --allowedTools mcp__claude_ai_Slack > \"$FLD_OUT\" 2>/dev/null",
+        &[("FLD_PROMPT", &prompt), ("FLD_OUT", &out_str)],
+    );
     let out = run_with_timeout(cmd, 240)?;
 
-    if !out.status.success() {
+    let raw = std::fs::read_to_string(&out_path).unwrap_or_default();
+    let _ = std::fs::remove_file(&out_path);
+
+    if raw.trim().is_empty() {
         let err = String::from_utf8_lossy(&out.stderr);
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        // Surface the model's own error message (e.g. "Not logged in") if present.
-        if let Some(msg) = serde_json::from_str::<Value>(stdout.trim())
-            .ok()
-            .and_then(|v| v["result"].as_str().map(str::to_string))
-        {
-            return Err(msg);
-        }
-        return Err(format!("claude failed: {}", err.trim()));
+        return Err(if err.trim().is_empty() {
+            "claude produced no output (Slack may be unavailable).".into()
+        } else {
+            format!("claude failed: {}", err.trim())
+        });
     }
 
-    let stdout = String::from_utf8_lossy(&out.stdout);
     // The CLI returns a JSON envelope; the model's answer is in `.result`.
-    let envelope: Value = serde_json::from_str(stdout.trim())
-        .map_err(|e| format!("Unexpected claude output: {e}"))?;
+    let envelope: Value =
+        serde_json::from_str(raw.trim()).map_err(|e| format!("Unexpected claude output: {e}"))?;
+    // Surface claude's own error (e.g. "Not logged in · Please run /login").
+    if envelope["is_error"].as_bool() == Some(true) {
+        return Err(envelope["result"].as_str().unwrap_or("claude reported an error").to_string());
+    }
     let result_text = envelope["result"].as_str().unwrap_or("");
     let obj_str = extract_json_object(result_text)
         .ok_or("Claude didn't return a JSON object (Slack may be unavailable).")?;
