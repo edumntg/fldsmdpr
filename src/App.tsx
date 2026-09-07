@@ -9,20 +9,23 @@ import { useUi } from "./stores/ui";
 import { useTheme } from "./stores/theme";
 import { useSync } from "./stores/sync";
 import { useConnections } from "./stores/connections";
+import { useInbox } from "./stores/inbox";
 
 export default function App() {
   const section = useUi((s) => s.section);
   const initTheme = useTheme((s) => s.init);
   const initSync = useSync((s) => s.init);
+  const reloadInbox = useInbox((s) => s.reload);
   const refreshConnections = useConnections((s) => s.refresh);
   const maybeAutoStartOnboarding = useOnboarding((s) => s.maybeAutoStart);
 
   useEffect(() => {
     void initTheme();
-    void initSync(); // refresh-on-open + daily scheduler
+    void reloadInbox(); // show cached items instantly…
+    void initSync(); // …then refresh-on-open + daily scheduler
     void refreshConnections();
     void maybeAutoStartOnboarding();
-  }, [initTheme, initSync, refreshConnections, maybeAutoStartOnboarding]);
+  }, [initTheme, reloadInbox, initSync, refreshConnections, maybeAutoStartOnboarding]);
 
   return (
     <div className="flex h-full">

@@ -27,6 +27,7 @@ function agentActions(n: AppNotification): { label: string; icon: typeof Bot }[]
     case "ai_inferred":
       return [{ label: "Draft reply", icon: MessageSquareReply }];
     case "ticket":
+    case "assigned":
       return [{ label: "Run agent on this task", icon: Bot }];
     default:
       return [];

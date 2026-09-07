@@ -155,37 +155,68 @@ fn net_err(e: reqwest::Error) -> String {
     format!("Network error: {e}")
 }
 
-// ---- sync orchestration (connectors land in Phases 1-3; this wires the plumbing) ----
+// ---- sync orchestration ----
 
 #[derive(Serialize)]
 pub struct SyncResult {
     pub synced_at: i64,
     pub providers: Vec<String>,
+    pub new_count: usize,
+    /// Per-provider errors; a failing provider must not break the others.
+    pub errors: Vec<String>,
 }
 
 #[tauri::command]
-pub fn run_sync(db: State<AppDb>) -> Result<SyncResult, String> {
-    let connected: Vec<String> = PROVIDERS
-        .iter()
-        .filter(|p| matches!(crate::secrets::get(&token_key(p)), Ok(Some(_))))
-        .map(|p| p.to_string())
-        .collect();
+pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<SyncResult, String> {
+    let mut synced: Vec<String> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+    let mut fetched: Vec<crate::connectors::Fetched> = Vec::new();
 
-    // Per-connector fetch workers land in Phase 1+. For now syncing records the
-    // timestamp so open-on-launch / daily-refresh scheduling is fully wired.
+    // GitHub (Phase 1). Slack/Linear/Calendar connectors land in Phases 2-3.
+    if let Ok(Some(token)) = crate::secrets::get(&token_key("github")) {
+        match crate::connectors::github::fetch(&token).await {
+            Ok(items) => {
+                fetched.extend(items);
+                synced.push("github".into());
+            }
+            Err(e) => errors.push(format!("github: {e}")),
+        }
+    }
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| e.to_string())?
         .as_millis() as i64;
 
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-    kv_set(&conn, "last_sync_at", &now.to_string());
-    for p in &connected {
-        kv_set(&conn, &format!("last_sync:{p}"), &now.to_string());
+    let new_count = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let new_count = crate::inbox::upsert(&conn, &fetched)?;
+        kv_set(&conn, "last_sync_at", &now.to_string());
+        for p in &synced {
+            kv_set(&conn, &format!("last_sync:{p}"), &now.to_string());
+        }
+        new_count
+    };
+
+    if new_count > 0 {
+        use tauri_plugin_notification::NotificationExt;
+        let body = if new_count == 1 {
+            "1 new item needs your attention".to_string()
+        } else {
+            format!("{new_count} new items need your attention")
+        };
+        let _ = app
+            .notification()
+            .builder()
+            .title("FLDSMDPR")
+            .body(body)
+            .show();
     }
 
     Ok(SyncResult {
         synced_at: now,
-        providers: connected,
+        providers: synced,
+        new_count,
+        errors,
     })
 }

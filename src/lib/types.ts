@@ -4,6 +4,7 @@ export type NotificationType =
   | "pr_review"
   | "pr_update"
   | "mention"
+  | "assigned"
   | "ai_inferred"
   | "ticket"
   | "event"

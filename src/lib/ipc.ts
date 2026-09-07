@@ -77,9 +77,25 @@ export async function providerDisconnect(provider: string): Promise<void> {
 export interface SyncResult {
   synced_at: number;
   providers: string[];
+  new_count: number;
+  errors: string[];
 }
 
 export async function runSync(): Promise<SyncResult> {
-  if (!inTauri) return { synced_at: Date.now(), providers: [] };
+  if (!inTauri) return { synced_at: Date.now(), providers: [], new_count: 0, errors: [] };
   return invoke<SyncResult>("run_sync");
+}
+
+// ---- inbox ----
+
+import type { AppNotification, NotificationState } from "./types";
+
+export async function listNotifications(): Promise<AppNotification[] | null> {
+  if (!inTauri) return null; // browser preview falls back to mock data
+  return invoke<AppNotification[]>("list_notifications");
+}
+
+export async function setNotificationState(id: string, state: NotificationState): Promise<void> {
+  if (!inTauri) return;
+  return invoke("set_notification_state", { id, state });
 }

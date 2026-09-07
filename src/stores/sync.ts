@@ -1,9 +1,11 @@
 import { create } from "zustand";
 import { kvGet, kvSet, runSync } from "../lib/ipc";
+import { useInbox } from "./inbox";
 
 interface SyncState {
   lastSyncAt: number | null;
   syncing: boolean;
+  lastError: string | null;
   /** Daily auto-refresh time, "HH:MM" 24h. Applies while the app stays open. */
   refreshTime: string;
   sync: () => Promise<void>;
@@ -18,14 +20,16 @@ let schedulerArmed = false;
 export const useSync = create<SyncState>((set, get) => ({
   lastSyncAt: null,
   syncing: false,
+  lastError: null,
   refreshTime: DEFAULT_REFRESH_TIME,
 
   sync: async () => {
     if (get().syncing) return;
-    set({ syncing: true });
+    set({ syncing: true, lastError: null });
     try {
       const result = await runSync();
-      set({ lastSyncAt: result.synced_at });
+      set({ lastSyncAt: result.synced_at, lastError: result.errors[0] ?? null });
+      await useInbox.getState().reload();
     } finally {
       set({ syncing: false });
     }

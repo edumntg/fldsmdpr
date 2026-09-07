@@ -1,5 +1,7 @@
 mod commands;
+mod connectors;
 mod db;
+mod inbox;
 mod providers;
 mod secrets;
 
@@ -14,6 +16,7 @@ pub struct AppDb(pub Mutex<rusqlite::Connection>);
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
@@ -32,6 +35,8 @@ pub fn run() {
             providers::provider_connect,
             providers::provider_disconnect,
             providers::run_sync,
+            inbox::list_notifications,
+            inbox::set_notification_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

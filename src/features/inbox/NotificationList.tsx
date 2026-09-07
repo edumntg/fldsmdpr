@@ -131,10 +131,15 @@ function NotificationCard({
 }
 
 function SyncIndicator() {
-  const { lastSyncAt, syncing, sync } = useSync();
+  const { lastSyncAt, syncing, sync, lastError } = useSync();
   return (
     <div className="ml-auto flex items-center gap-1">
-      {lastSyncAt && !syncing && (
+      {lastError && !syncing && (
+        <span title={lastError} className="text-[11px] text-danger">
+          Sync issue
+        </span>
+      )}
+      {lastSyncAt && !syncing && !lastError && (
         <span className="text-[11px] text-ink-3">Updated {relativeTime(lastSyncAt)}</span>
       )}
       {syncing && <span className="text-[11px] text-ink-3">Refreshing…</span>}

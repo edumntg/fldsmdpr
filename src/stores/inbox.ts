@@ -1,19 +1,27 @@
 import { create } from "zustand";
 import type { AppNotification, NotificationState, SectionId } from "../lib/types";
+import { listNotifications, setNotificationState } from "../lib/ipc";
 import { mockNotifications } from "../features/inbox/mockData";
 
 interface InboxState {
   items: AppNotification[];
+  /** Load from SQLite (inside Tauri) or mock data (browser preview). */
+  reload: () => Promise<void>;
   setState: (id: string, state: NotificationState) => void;
 }
 
-// Phase 0: mock data. Phase 1 swaps this for SQLite-backed queries via IPC.
 export const useInbox = create<InboxState>((set) => ({
-  items: mockNotifications,
-  setState: (id, state) =>
+  items: [],
+  reload: async () => {
+    const rows = await listNotifications();
+    set({ items: rows ?? mockNotifications });
+  },
+  setState: (id, state) => {
     set((s) => ({
       items: s.items.map((n) => (n.id === id ? { ...n, state } : n)),
-    })),
+    }));
+    void setNotificationState(id, state); // persist; no-op in browser preview
+  },
 }));
 
 const sectionSources: Partial<Record<SectionId, AppNotification["source"][]>> = {
