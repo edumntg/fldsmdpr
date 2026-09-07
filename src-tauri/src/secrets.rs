@@ -49,11 +49,3 @@ pub fn delete(key: &str) -> Result<(), keyring::Error> {
     cache().lock().unwrap().insert(key.to_string(), None);
     result
 }
-
-/// Loads every provider token into the cache in one pass at startup, so the
-/// keychain prompt (if any) happens once, before the first sync.
-pub fn warm(keys: &[&str]) {
-    for key in keys {
-        let _ = get(key);
-    }
-}
