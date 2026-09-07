@@ -1,13 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Bot, Check, ChevronDown, Loader2, TerminalSquare } from "lucide-react";
+import { Bot, ChevronDown, TerminalSquare } from "lucide-react";
 import type { AppNotification } from "../../lib/types";
-import { launchOrca, orcaStatus } from "../../lib/ipc";
-import { repoLocalPath } from "../../lib/pty";
-import { useTerminal } from "../../stores/terminal";
-import { buildAgentPrompt, worktreeName } from "./prompt";
+import { orcaStatus } from "../../lib/ipc";
+import { useAgents, isActive } from "../../stores/agents";
+import { AgentStatusRow } from "./AgentStatusRow";
 import { cn } from "../../lib/utils";
-
-type Runner = "orca" | "claude-code";
 
 interface Props {
   n: AppNotification;
@@ -16,16 +13,17 @@ interface Props {
 }
 
 /**
- * Split button: primary click runs the preferred runner, the chevron opens a
- * menu to pick Orca (worktree + agent) or the built-in Claude Code (Phase 4).
+ * Split button: primary click runs the preferred runner (Orca), the chevron
+ * opens a menu to pick Orca (worktree + agent) or the built-in Claude Code.
+ * Delegates to the agents store so the run is tracked with live status.
  */
 export function AgentRunButton({ n, label, icon: Icon }: Props) {
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [orcaInstalled, setOrcaInstalled] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const launch = useAgents((s) => s.launch);
+  const run = useAgents((s) => s.runs[n.id]);
 
   useEffect(() => {
     void orcaStatus().then((s) => setOrcaInstalled(s.installed));
@@ -40,66 +38,30 @@ export function AgentRunButton({ n, label, icon: Icon }: Props) {
     return () => window.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const openClaude = useTerminal((s) => s.openClaude);
-
-  const run = async (runner: Runner) => {
+  const doRun = (runner: "orca" | "claude") => {
     setOpen(false);
-    setError(null);
-    if (!n.meta?.repo) {
-      setError("This item has no repository to work in.");
-      return;
-    }
-    if (runner === "claude-code") {
-      const cwd = (await repoLocalPath(n.meta.repo)) ?? undefined;
-      openClaude({
-        cwd,
-        prompt: buildAgentPrompt(n, label),
-        title: `claude · ${n.meta.number ?? n.meta.key ?? n.meta.repo}`,
-      });
-      setResult(cwd ? "Started in the built-in terminal" : "Started (repo not found locally — check cwd)");
-      return;
-    }
-    setBusy(true);
-    try {
-      const res = await launchOrca({
-        name: worktreeName(n),
-        repo: n.meta.repo,
-        prompt: buildAgentPrompt(n, label),
-        comment: n.url,
-      });
-      setResult(`Launched in Orca: ${res.worktree}`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+    void launch(n, label, runner);
   };
 
-  if (result) {
-    return (
-      <span className="inline-flex h-8.5 items-center gap-2 rounded-pill bg-success/12 px-3.5 text-[13px] font-medium text-success">
-        <Check size={14} />
-        {result}
-      </span>
-    );
+  // While an agent is running (or just finished), show its status instead of the button.
+  if (run && isActive(run.status)) {
+    return <AgentStatusRow run={run} />;
   }
 
   return (
     <div className="relative inline-flex flex-col" ref={menuRef}>
       <div className="inline-flex">
         <button
-          disabled={busy}
-          onClick={() => void run("orca")}
+          onClick={() => doRun("orca")}
           className={cn(
             "inline-flex h-8.5 cursor-default items-center gap-2 rounded-l-[999px] bg-accent px-3.5 text-[13px] font-medium text-accent-fg shadow-sm",
             "transition-colors hover:bg-accent-hover disabled:pointer-events-none disabled:opacity-60",
           )}
         >
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <Icon size={14} />}
-          {busy ? "Launching…" : label}
+          <Icon size={14} />
+          {label}
         </button>
         <button
-          disabled={busy}
           onClick={() => setOpen((o) => !o)}
           aria-label="Choose agent runner"
           className="inline-flex h-8.5 cursor-default items-center rounded-r-[999px] border-l border-white/25 bg-accent px-2 text-accent-fg transition-colors hover:bg-accent-hover disabled:opacity-60"
@@ -119,18 +81,20 @@ export function AgentRunButton({ n, label, icon: Icon }: Props) {
                 : "Orca CLI not detected on this machine"
             }
             disabled={!orcaInstalled}
-            onClick={() => void run("orca")}
+            onClick={() => doRun("orca")}
           />
           <RunnerOption
             icon={TerminalSquare}
             title="Built-in Claude Code"
             subtitle="Runs claude in the FLDSMDPR terminal"
-            onClick={() => void run("claude-code")}
+            onClick={() => doRun("claude")}
           />
         </div>
       )}
 
-      {error && <p className="mt-2 max-w-72 text-xs text-danger">{error}</p>}
+      {run?.status === "failed" && (
+        <p className="mt-2 max-w-72 text-xs text-danger">{run.detail}</p>
+      )}
     </div>
   );
 }

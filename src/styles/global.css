@@ -30,8 +30,10 @@
   --warning: #d97706;
   --danger: #dc2626;
 
-  /* per-source */
-  --src-github: #8250df;
+  /* per-source (GitHub green = open, matching GitHub's own PR/issue color) */
+  --src-github: #1a7f37;
+  --src-github-merged: #8250df;
+  --src-github-closed: #cf222e;
   --src-slack: #2eb67d;
   --src-linear: #5e6ad2;
   --src-gcal: #d97706;
@@ -63,7 +65,9 @@
   --warning: #f59e0b;
   --danger: #ef4444;
 
-  --src-github: #a371f7;
+  --src-github: #3fb950;
+  --src-github-merged: #a371f7;
+  --src-github-closed: #f85149;
   --src-slack: #3ddc97;
   --src-linear: #7c86e8;
   --src-gcal: #f5a623;
@@ -91,6 +95,8 @@
   --color-warning: var(--warning);
   --color-danger: var(--danger);
   --color-src-github: var(--src-github);
+  --color-src-github-merged: var(--src-github-merged);
+  --color-src-github-closed: var(--src-github-closed);
   --color-src-slack: var(--src-slack);
   --color-src-linear: var(--src-linear);
   --color-src-gcal: var(--src-gcal);

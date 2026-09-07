@@ -6,6 +6,7 @@ import "@xterm/xterm/css/xterm.css";
 import type { TermTab } from "../../stores/terminal";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, onPtyOutput } from "../../lib/pty";
 import { useTheme } from "../../stores/theme";
+import { useAgents } from "../../stores/agents";
 
 const themes = {
   dark: {
@@ -79,7 +80,13 @@ export function XtermView({ tab, active }: { tab: TermTab; active: boolean }) {
       unsub = await onPtyOutput(
         id,
         (bytes) => term.write(bytes),
-        () => term.write("\r\n\x1b[90m[process exited]\x1b[0m\r\n"),
+        () => {
+          term.write("\r\n\x1b[90m[process exited]\x1b[0m\r\n");
+          // Mark the linked agent run finished when a claude session ends.
+          if (tab.kind === "claude" && tab.notificationId) {
+            useAgents.getState().setStatus(tab.notificationId, "done", "Session ended");
+          }
+        },
       );
       term.onData((d) => void ptyWrite(id, d));
 

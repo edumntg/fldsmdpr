@@ -7,6 +7,8 @@ export interface TermTab {
   cwd?: string;
   /** For claude tabs: text written to the pty once it's ready. */
   seedPrompt?: string;
+  /** For claude tabs launched from a notification: links the tab to its agent run. */
+  notificationId?: string;
 }
 
 interface TerminalState {
@@ -16,7 +18,12 @@ interface TerminalState {
   setOpen: (open: boolean) => void;
   toggle: () => void;
   newShell: () => void;
-  openClaude: (opts: { cwd?: string; prompt: string; title: string }) => void;
+  openClaude: (opts: {
+    cwd?: string;
+    prompt: string;
+    title: string;
+    notificationId?: string;
+  }) => void;
   activate: (id: string) => void;
   close: (id: string) => void;
 }
@@ -46,10 +53,10 @@ export const useTerminal = create<TerminalState>((set, get) => ({
     }));
   },
 
-  openClaude: ({ cwd, prompt, title }) => {
+  openClaude: ({ cwd, prompt, title, notificationId }) => {
     const id = tabId();
     set((s) => ({
-      tabs: [...s.tabs, { id, title, kind: "claude", cwd, seedPrompt: prompt }],
+      tabs: [...s.tabs, { id, title, kind: "claude", cwd, seedPrompt: prompt, notificationId }],
       activeId: id,
       open: true,
     }));

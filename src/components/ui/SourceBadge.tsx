@@ -1,5 +1,5 @@
-import { GitPullRequest, MessageSquare, CircleDot, Calendar, Bot } from "lucide-react";
-import type { Source } from "../../lib/types";
+import { GitPullRequest, GitMerge, CircleDot, MessageSquare, Calendar, Bot } from "lucide-react";
+import type { Source, AppNotification } from "../../lib/types";
 import { cn } from "../../lib/utils";
 
 const config: Record<Source, { icon: typeof Bot; label: string; color: string; bg: string }> = {
@@ -10,12 +10,32 @@ const config: Record<Source, { icon: typeof Bot; label: string; color: string; b
   agent: { icon: Bot, label: "Agent", color: "text-src-agent", bg: "bg-src-agent/12" },
 };
 
-export function SourceBadge({ source, size = 16 }: { source: Source; size?: number }) {
-  const { icon: Icon, label, color, bg } = config[source];
+/** GitHub items pick icon (PR vs issue vs merged) and color (open=green,
+ * merged=purple, closed=red) from their state so they read like GitHub. */
+function githubVariant(n: AppNotification) {
+  const isPr = n.meta?.is_pr !== "false";
+  const state = n.meta?.state; // open | merged | closed
+  if (state === "merged") return { icon: GitMerge, color: "text-src-github-merged", bg: "bg-src-github-merged/12" };
+  if (state === "closed") return { icon: isPr ? GitPullRequest : CircleDot, color: "text-src-github-closed", bg: "bg-src-github-closed/12" };
+  return { icon: isPr ? GitPullRequest : CircleDot, color: "text-src-github", bg: "bg-src-github/12" };
+}
+
+export function SourceBadge({
+  source,
+  size = 16,
+  n,
+}: {
+  source: Source;
+  size?: number;
+  n?: AppNotification;
+}) {
+  const base = config[source];
+  const v = source === "github" && n ? githubVariant(n) : base;
+  const Icon = v.icon;
   return (
     <span
-      title={label}
-      className={cn("inline-flex shrink-0 items-center justify-center rounded-lg p-1.5", bg, color)}
+      title={base.label}
+      className={cn("inline-flex shrink-0 items-center justify-center rounded-lg p-1.5", v.bg, v.color)}
     >
       <Icon size={size} strokeWidth={2} />
     </span>

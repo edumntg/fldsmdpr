@@ -1,13 +1,58 @@
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, InboxIcon, RefreshCw, Layers, ChevronDown, Check } from "lucide-react";
+import {
+  Sparkles,
+  InboxIcon,
+  RefreshCw,
+  Layers,
+  ChevronDown,
+  Check,
+  Bot,
+  TerminalSquare,
+  ExternalLink,
+  Eye,
+  CircleDot,
+} from "lucide-react";
 import { useInbox, filterBySection } from "../../stores/inbox";
 import { useUi } from "../../stores/ui";
 import { useSync } from "../../stores/sync";
-import type { AppNotification, SectionId } from "../../lib/types";
+import { useAgents } from "../../stores/agents";
+import type { AppNotification, SectionId, NotificationType } from "../../lib/types";
 import { cn, relativeTime } from "../../lib/utils";
-import { SourceBadge } from "../../components/ui/SourceBadge";
+import { SourceBadge, sourceLabel } from "../../components/ui/SourceBadge";
 import { Chip } from "../../components/ui/Chip";
 import { IconButton } from "../../components/ui/IconButton";
+import { AgentStatusRow } from "../agents/AgentStatusRow";
+
+/** Default agent action label per notification type (for the context menu). */
+function defaultAction(type: NotificationType): string {
+  switch (type) {
+    case "pr_review":
+      return "Review with agent";
+    case "pr_update":
+      return "Fix with agent";
+    case "ticket":
+    case "assigned":
+      return "Run agent on this task";
+    default:
+      return "Draft reply";
+  }
+}
+
+async function openUrl(url?: string) {
+  if (!url) return;
+  if ("__TAURI_INTERNALS__" in window) {
+    const { openUrl: open } = await import("@tauri-apps/plugin-opener");
+    await open(url);
+  } else {
+    window.open(url, "_blank");
+  }
+}
+
+interface MenuState {
+  n: AppNotification;
+  x: number;
+  y: number;
+}
 
 const sectionTitles: Record<SectionId, string> = {
   inbox: "Inbox",
@@ -19,16 +64,28 @@ const sectionTitles: Record<SectionId, string> = {
   settings: "Settings",
 };
 
-type GroupKey = "none" | "status" | "priority" | "project" | "lead" | "cycle" | "team";
+type GroupKey =
+  | "none"
+  | "status"
+  | "priority"
+  | "project"
+  | "lead"
+  | "cycle"
+  | "team"
+  | "repo"
+  | "author"
+  | "type"
+  | "source";
 
-// Which notification meta field each grouping reads.
-const GROUP_FIELD: Record<Exclude<GroupKey, "none">, string> = {
+// Meta field read for the straightforward keys.
+const GROUP_FIELD: Partial<Record<GroupKey, string>> = {
   status: "state",
   priority: "priority",
   project: "project",
   lead: "lead",
   cycle: "cycle",
   team: "team",
+  repo: "repo",
 };
 
 const GROUP_LABELS: Record<GroupKey, string> = {
@@ -39,7 +96,42 @@ const GROUP_LABELS: Record<GroupKey, string> = {
   lead: "Lead",
   cycle: "Cycle",
   team: "Team",
+  repo: "Repo",
+  author: "Author",
+  type: "Type",
+  source: "Source",
 };
+
+// Grouping options offered per section.
+const SECTION_GROUPS: Partial<Record<SectionId, GroupKey[]>> = {
+  inbox: ["none", "source", "repo", "type"],
+  prs: ["none", "repo", "author", "type"],
+  tickets: ["none", "status", "priority", "project", "lead", "cycle", "team"],
+};
+
+function typeLabel(n: AppNotification): string {
+  if (n.source === "github") return n.meta?.is_pr === "false" ? "Issues" : "Pull Requests";
+  switch (n.type) {
+    case "mention":
+      return "Mentions";
+    case "ai_inferred":
+      return "AI-flagged";
+    case "ticket":
+      return "Tickets";
+    case "event":
+      return "Events";
+    default:
+      return sourceLabel(n.source);
+  }
+}
+
+function groupLabelFor(n: AppNotification, by: GroupKey): string {
+  if (by === "author") return n.meta?.author ?? n.meta?.from ?? "No author";
+  if (by === "source") return sourceLabel(n.source);
+  if (by === "type") return typeLabel(n);
+  const field = GROUP_FIELD[by];
+  return (field && n.meta?.[field]) || `No ${GROUP_LABELS[by].toLowerCase()}`;
+}
 
 interface Group {
   key: string;
@@ -49,11 +141,10 @@ interface Group {
 
 function groupItems(items: AppNotification[], by: GroupKey): Group[] {
   if (by === "none") return [{ key: "all", label: "", items }];
-  const field = GROUP_FIELD[by];
   const order: string[] = [];
   const map = new Map<string, AppNotification[]>();
   for (const n of items) {
-    const label = n.meta?.[field] ?? `No ${GROUP_LABELS[by].toLowerCase()}`;
+    const label = groupLabelFor(n, by);
     if (!map.has(label)) {
       map.set(label, []);
       order.push(label);
@@ -70,8 +161,10 @@ export function NotificationList() {
   const markRead = useInbox((s) => s.setState);
   const visible = filterBySection(items, section);
   const [groupBy, setGroupBy] = useState<GroupKey>("none");
+  useEffect(() => setGroupBy("none"), [section]);
 
-  const activeGroup = section === "tickets" ? groupBy : "none";
+  const groupOptions = SECTION_GROUPS[section] ?? ["none"];
+  const activeGroup = groupOptions.includes(groupBy) ? groupBy : "none";
   const groups = groupItems(visible, activeGroup);
   // Flattened order for j/k navigation across group sections.
   const flat = groups.flatMap((g) => g.items);
@@ -102,6 +195,16 @@ export function NotificationList() {
     if (n.state === "unread") markRead(n.id, "read");
   };
 
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const openMenu = (n: AppNotification, e: React.MouseEvent) => {
+    e.preventDefault();
+    setMenu({ n, x: e.clientX, y: e.clientY });
+  };
+
+  // Collapsed group keys (reset when the grouping dimension changes).
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  useEffect(() => setCollapsed({}), [activeGroup, section]);
+
   return (
     <section className="flex h-full w-95 shrink-0 flex-col border-r border-line bg-surface">
       <header data-tauri-drag-region className="flex h-13 shrink-0 items-center px-4">
@@ -110,9 +213,9 @@ export function NotificationList() {
         <SyncIndicator />
       </header>
 
-      {section === "tickets" && visible.length > 0 && (
+      {groupOptions.length > 1 && visible.length > 0 && (
         <div className="flex shrink-0 items-center px-3 pb-2">
-          <GroupByControl value={groupBy} onChange={setGroupBy} />
+          <GroupByControl value={activeGroup} options={groupOptions} onChange={setGroupBy} />
         </div>
       )}
 
@@ -121,36 +224,65 @@ export function NotificationList() {
           <EmptyState />
         ) : (
           <div className="flex flex-col gap-3">
-            {groups.map((g) => (
-              <div key={g.key}>
-                {g.label && (
-                  <div className="flex items-center gap-2 px-1.5 pb-1.5">
-                    <h2 className="text-[11px] font-semibold tracking-wide text-ink-2 uppercase">
-                      {g.label}
-                    </h2>
-                    <span className="text-[11px] text-ink-3 tabular-nums">{g.items.length}</span>
-                  </div>
-                )}
-                <ul className="flex flex-col gap-1.5">
-                  {g.items.map((n) => (
-                    <NotificationCard
-                      key={n.id}
-                      n={n}
-                      selected={n.id === selectedId}
-                      onSelect={() => onSelect(n)}
-                    />
-                  ))}
-                </ul>
-              </div>
-            ))}
+            {groups.map((g) => {
+              const grouped = activeGroup !== "none";
+              const isCollapsed = grouped && collapsed[g.key];
+              return (
+                <div key={g.key}>
+                  {g.label && (
+                    <button
+                      onClick={() =>
+                        setCollapsed((c) => ({ ...c, [g.key]: !c[g.key] }))
+                      }
+                      className="mb-1.5 flex w-full cursor-default items-center gap-1.5 px-1.5 text-left"
+                    >
+                      <ChevronDown
+                        size={12}
+                        className={cn(
+                          "shrink-0 text-ink-3 transition-transform duration-150",
+                          isCollapsed && "-rotate-90",
+                        )}
+                      />
+                      <h2 className="text-[11px] font-semibold tracking-wide text-ink-2 uppercase">
+                        {g.label}
+                      </h2>
+                      <span className="text-[11px] text-ink-3 tabular-nums">{g.items.length}</span>
+                    </button>
+                  )}
+                  {!isCollapsed && (
+                    <ul className="flex flex-col gap-1.5">
+                      {g.items.map((n) => (
+                        <NotificationCard
+                          key={n.id}
+                          n={n}
+                          selected={n.id === selectedId}
+                          onSelect={() => onSelect(n)}
+                          onOpenMenu={(e) => openMenu(n, e)}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
+
+      {menu && <CardContextMenu menu={menu} onClose={() => setMenu(null)} />}
     </section>
   );
 }
 
-function GroupByControl({ value, onChange }: { value: GroupKey; onChange: (k: GroupKey) => void }) {
+function GroupByControl({
+  value,
+  options,
+  onChange,
+}: {
+  value: GroupKey;
+  options: GroupKey[];
+  onChange: (k: GroupKey) => void;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -162,8 +294,6 @@ function GroupByControl({ value, onChange }: { value: GroupKey; onChange: (k: Gr
     window.addEventListener("mousedown", onDown);
     return () => window.removeEventListener("mousedown", onDown);
   }, [open]);
-
-  const options: GroupKey[] = ["none", "status", "priority", "project", "lead", "cycle", "team"];
 
   return (
     <div className="relative" ref={ref}>
@@ -208,15 +338,20 @@ function NotificationCard({
   n,
   selected,
   onSelect,
+  onOpenMenu,
 }: {
   n: AppNotification;
   selected: boolean;
   onSelect: () => void;
+  onOpenMenu: (e: React.MouseEvent) => void;
 }) {
+  const run = useAgents((s) => s.runs[n.id]);
   return (
     <li>
-      <button
+      <div
         onClick={onSelect}
+        onDoubleClick={onOpenMenu}
+        onContextMenu={onOpenMenu}
         className={cn(
           "w-full cursor-default rounded-card border p-3 text-left transition-all duration-150",
           selected
@@ -225,7 +360,7 @@ function NotificationCard({
         )}
       >
         <div className="flex items-start gap-2.5">
-          <SourceBadge source={n.source} size={14} />
+          <SourceBadge source={n.source} size={14} n={n} />
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2">
               <h3
@@ -250,10 +385,93 @@ function NotificationCard({
               {n.meta?.priority === "Urgent" && <Chip tone="warning">Urgent</Chip>}
               <span className="ml-auto text-[11px] text-ink-3">{relativeTime(n.createdAt)}</span>
             </div>
+            {run && <AgentStatusRow run={run} />}
           </div>
         </div>
-      </button>
+      </div>
     </li>
+  );
+}
+
+function CardContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }) {
+  const { n, x, y } = menu;
+  const launch = useAgents((s) => s.launch);
+  const setState = useInbox((s) => s.setState);
+  const select = useUi((s) => s.select);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onEsc);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onEsc);
+    };
+  }, [onClose]);
+
+  const action = defaultAction(n.type);
+  const canRunAgent = !!n.meta?.repo;
+  const items: { icon: typeof Bot; label: string; run: () => void; disabled?: boolean; danger?: boolean }[] = [
+    {
+      icon: Bot,
+      label: `${action} — Claude`,
+      run: () => void launch(n, action, "claude"),
+      disabled: !canRunAgent,
+    },
+    {
+      icon: TerminalSquare,
+      label: `${action} — Orca`,
+      run: () => void launch(n, action, "orca"),
+      disabled: !canRunAgent,
+    },
+    {
+      icon: Eye,
+      label: n.state === "unread" ? "Mark as read" : "Mark as unread",
+      run: () => setState(n.id, n.state === "unread" ? "read" : "unread"),
+    },
+    { icon: ExternalLink, label: "Open", run: () => void openUrl(n.url), disabled: !n.url },
+    {
+      icon: CircleDot,
+      label: "Mark done",
+      run: () => {
+        setState(n.id, "done");
+        select(null);
+      },
+    },
+  ];
+
+  // Keep the menu on-screen.
+  const top = Math.min(y, window.innerHeight - items.length * 34 - 16);
+  const left = Math.min(x, window.innerWidth - 240);
+
+  return (
+    <div
+      ref={ref}
+      style={{ top, left }}
+      className="animate-pop-in fixed z-50 w-56 overflow-hidden rounded-xl border border-line-strong bg-surface-2 p-1 shadow-pop"
+    >
+      {items.map((it) => (
+        <button
+          key={it.label}
+          disabled={it.disabled}
+          onClick={() => {
+            it.run();
+            onClose();
+          }}
+          className={cn(
+            "flex w-full cursor-default items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px]",
+            it.disabled ? "opacity-40" : it.danger ? "text-danger hover:bg-danger/10" : "text-ink-2 hover:bg-surface-3",
+          )}
+        >
+          <it.icon size={14} className="shrink-0" />
+          {it.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

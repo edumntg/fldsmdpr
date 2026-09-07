@@ -107,6 +107,13 @@ pub async fn fetch(token: &str) -> Result<Vec<Fetched>, String> {
             let mut meta = HashMap::new();
             meta.insert("repo".into(), repo.clone());
             meta.insert("number".into(), format!("#{number}"));
+            meta.insert("is_pr".into(), is_pr.to_string());
+            // Only open items are fetched (is:open), so state is "open" here;
+            // the field lets the UI colour merged/closed correctly if that changes.
+            meta.insert(
+                "state".into(),
+                item["state"].as_str().unwrap_or("open").to_string(),
+            );
             if !author.is_empty() {
                 meta.insert("author".into(), author);
             }

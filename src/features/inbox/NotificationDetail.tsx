@@ -16,6 +16,8 @@ import { Button } from "../../components/ui/Button";
 import { Chip } from "../../components/ui/Chip";
 import { SourceBadge, sourceLabel } from "../../components/ui/SourceBadge";
 import { AgentRunButton } from "../agents/AgentRunButton";
+import { AgentStatusPanel } from "../agents/AgentStatusRow";
+import { useAgents } from "../../stores/agents";
 
 /** Agent actions offered per notification type (wired to real sessions in Phase 4). */
 function agentActions(n: AppNotification): { label: string; icon: typeof Bot }[] {
@@ -41,6 +43,7 @@ export function NotificationDetail() {
   const setState = useInbox((s) => s.setState);
   const select = useUi((s) => s.select);
   const n = items.find((i) => i.id === selectedId);
+  const agentRun = useAgents((s) => (n ? s.runs[n.id] : undefined));
 
   if (!n) return <Placeholder />;
 
@@ -58,7 +61,7 @@ export function NotificationDetail() {
       <div className="flex-1 overflow-y-auto p-5 pt-1">
         <div className="animate-pop-in mx-auto max-w-2xl rounded-card border border-line bg-surface-2 p-6 shadow-card">
           <div className="flex items-start gap-3">
-            <SourceBadge source={n.source} />
+            <SourceBadge source={n.source} n={n} />
             <div className="min-w-0 flex-1">
               <h2 className="text-[17px] leading-6 font-semibold tracking-tight">{n.title}</h2>
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-ink-3">
@@ -83,6 +86,8 @@ export function NotificationDetail() {
           <p className="mt-4 text-[13.5px] leading-6 whitespace-pre-wrap text-ink-2 select-text">
             {n.snippet}
           </p>
+
+          {agentRun && <AgentStatusPanel run={agentRun} />}
 
           <div className="mt-6 flex flex-wrap items-start gap-2 border-t border-line pt-4">
             {actions.map(({ label, icon }) => (
