@@ -12,6 +12,8 @@ import {
   Eye,
   CircleDot,
   Loader2,
+  Search,
+  X,
 } from "lucide-react";
 import { useInbox, filterBySection } from "../../stores/inbox";
 import { useUi } from "../../stores/ui";
@@ -176,10 +178,26 @@ export function NotificationList() {
   const { section, selectedId, select } = useUi();
   const items = useInbox((s) => s.items);
   const markRead = useInbox((s) => s.setState);
-  const visible = filterBySection(items, section);
   const [groupBy, setGroupBy] = useState<GroupKey>("none");
+  const [query, setQuery] = useState("");
   const [listWidth, startListDrag] = usePaneSize("inbox-list", 380, 300, 680);
-  useEffect(() => setGroupBy("none"), [section]);
+  useEffect(() => {
+    setGroupBy("none");
+    setQuery("");
+  }, [section]);
+
+  // Free-text filter over everything visible on a card: title, snippet,
+  // author, repo, project, channel… (every meta value counts).
+  const sectionItems = filterBySection(items, section);
+  const q = query.trim().toLowerCase();
+  const visible = !q
+    ? sectionItems
+    : sectionItems.filter((n) =>
+        [n.title, n.snippet, sourceLabel(n.source), ...Object.values(n.meta ?? {})]
+          .join(" ")
+          .toLowerCase()
+          .includes(q),
+      );
 
   const groupOptions = SECTION_GROUPS[section] ?? ["none"];
   const activeGroup = groupOptions.includes(groupBy) ? groupBy : "none";
@@ -241,16 +259,43 @@ export function NotificationList() {
         {section === "slack" ? <SlackAnalyzeIndicator /> : <SyncIndicator />}
       </header>
 
-      {groupOptions.length > 1 && visible.length > 0 && (
-        <div className="flex shrink-0 items-center px-3 pb-2">
-          <GroupByControl value={activeGroup} options={groupOptions} onChange={setGroupBy} />
+      {(sectionItems.length > 0 || q) && (
+        <div className="flex shrink-0 items-center gap-2 px-3 pb-2">
+          <div className="relative min-w-0 flex-1">
+            <Search size={13} className="absolute top-1/2 left-2.5 -translate-y-1/2 text-ink-3" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+              placeholder="Filter by title, author, repo…"
+              className="h-7.5 w-full rounded-xl border border-line bg-surface-2 pr-7 pl-7.5 text-xs text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                aria-label="Clear filter"
+                className="absolute top-1/2 right-2 -translate-y-1/2 cursor-default text-ink-3 hover:text-ink"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          {groupOptions.length > 1 && (
+            <GroupByControl value={activeGroup} options={groupOptions} onChange={setGroupBy} />
+          )}
         </div>
       )}
 
       <div className="flex-1 overflow-y-auto px-2.5 pb-3">
         {section === "slack" && <SlackOverview />}
         {visible.length === 0 ? (
-          <EmptyState />
+          q ? (
+            <p className="px-2 py-6 text-center text-[13px] text-ink-3">
+              No items match “{query.trim()}”.
+            </p>
+          ) : (
+            <EmptyState />
+          )
         ) : (
           <div className="flex flex-col gap-3">
             {groups.map((g) => {
