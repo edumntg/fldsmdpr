@@ -49,7 +49,14 @@ interface AgentsState {
     n: AppNotification,
     label: string,
     runner: "orca" | "claude",
-    opts?: { repoId?: string; repoName?: string; cwd?: string; extra?: string; model?: string },
+    opts?: {
+      repoId?: string;
+      repoName?: string;
+      cwd?: string;
+      extra?: string;
+      model?: string;
+      skipPermissions?: boolean;
+    },
   ) => Promise<void>;
   setStatus: (notificationId: string, status: AgentStatus, detail?: string) => void;
   clear: (notificationId: string) => void;
@@ -115,9 +122,13 @@ export const useAgents = create<AgentsState>((set, get) => ({
 
     if (runner === "claude") {
       const cwd = opts?.cwd ?? (repo ? ((await repoLocalPath(repo)) ?? undefined) : undefined);
-      // Model: explicit pick > last saved choice > Fable 5.
+      // Model / permissions: explicit pick > last saved choice > defaults
+      // (Fable 5, skip-permissions ON).
       const model =
         opts?.model ?? (await kvGet("agent_model").catch(() => null)) ?? DEFAULT_AGENT_MODEL;
+      const skipPermissions =
+        opts?.skipPermissions ??
+        (await kvGet("agent_skip_permissions").catch(() => null)) !== "0";
       useTerminal.getState().openClaude({
         cwd,
         prompt: buildAgentPrompt(n, label, opts?.extra),
@@ -125,6 +136,7 @@ export const useAgents = create<AgentsState>((set, get) => ({
         notificationId: n.id,
         runId: run.id,
         model,
+        skipPermissions,
       });
       get().setStatus(
         n.id,

@@ -98,6 +98,7 @@ export function XtermView({ tab, active }: { tab: TermTab; active: boolean }) {
             tab.kind === "claude"
               ? [
                   ...(tab.model ? ["--model", tab.model] : []),
+                  ...(tab.skipPermissions ? ["--dangerously-skip-permissions"] : []),
                   ...(tab.seedPrompt ? [tab.seedPrompt] : []),
                 ]
               : undefined,

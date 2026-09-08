@@ -41,6 +41,7 @@ function AgentRunnerMenu({
 }) {
   const [view, setView] = useState<MenuView>(initialView);
   const [model, setModel] = useState(DEFAULT_AGENT_MODEL);
+  const [skipPerms, setSkipPerms] = useState(true);
   const [orcaInstalled, setOrcaInstalled] = useState(false);
   const [repos, setRepos] = useState<OrcaRepo[] | null>(null);
   const [loadingRepos, setLoadingRepos] = useState(false);
@@ -51,11 +52,16 @@ function AgentRunnerMenu({
   useEffect(() => {
     void orcaStatus().then((s) => setOrcaInstalled(s.installed));
     void kvGet("agent_model").then((m) => m && setModel(m));
+    void kvGet("agent_skip_permissions").then((v) => setSkipPerms(v !== "0"));
   }, []);
 
   const pickModel = (m: string) => {
     setModel(m);
     void kvSet("agent_model", m); // remembered as the default for next runs
+  };
+  const toggleSkipPerms = (v: boolean) => {
+    setSkipPerms(v);
+    void kvSet("agent_skip_permissions", v ? "1" : "0");
   };
 
   // The menu is portaled to <body>, so close-on-outside-click lives here
@@ -113,7 +119,7 @@ function AgentRunnerMenu({
   };
   const runClaude = (cwd: string) => {
     onClose();
-    void launch(n, label, "claude", { cwd, model });
+    void launch(n, label, "claude", { cwd, model, skipPermissions: skipPerms });
   };
   const browseAndRun = async () => {
     const folder = await pickFolder();
@@ -209,6 +215,16 @@ function AgentRunnerMenu({
                     </option>
                   ))}
                 </select>
+              </label>
+              <label className="mb-1.5 flex cursor-default items-center gap-2 px-1.5 text-[11.5px] text-ink-2">
+                <input
+                  type="checkbox"
+                  checked={skipPerms}
+                  onChange={(e) => toggleSkipPerms(e.target.checked)}
+                  className="size-3 accent-accent"
+                />
+                Skip permission prompts
+                <span className="font-mono text-[10px] text-ink-3">--dangerously-skip-permissions</span>
               </label>
               {repoList((r) => runClaude(r.path), (r) => r.path)}
               <button

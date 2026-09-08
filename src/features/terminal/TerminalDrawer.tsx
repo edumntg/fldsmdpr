@@ -2,11 +2,14 @@ import { useEffect } from "react";
 import { Plus, X, ChevronDown, Bot, TerminalSquare } from "lucide-react";
 import { useTerminal } from "../../stores/terminal";
 import { XtermView } from "./XtermView";
+import { usePaneSize } from "../../lib/usePaneSize";
 import { cn } from "../../lib/utils";
 import { IconButton } from "../../components/ui/IconButton";
 
 export function TerminalDrawer() {
   const { open, tabs, activeId, toggle, newShell, activate, close, setOpen } = useTerminal();
+  // Dragging the top edge up grows the drawer (sign -1 on the y axis).
+  const [height, startDrag] = usePaneSize("terminal", 288, 160, 720);
 
   // ⌘J / Ctrl+J toggles the drawer.
   useEffect(() => {
@@ -26,11 +29,17 @@ export function TerminalDrawer() {
 
   return (
     <div
+      style={{ height }}
       className={cn(
-        "animate-fade-in flex h-72 shrink-0 flex-col border-t border-line bg-surface-2",
+        "animate-fade-in relative flex shrink-0 flex-col border-t border-line bg-surface-2",
         !open && "hidden",
       )}
     >
+      {/* drag handle: resize the drawer height */}
+      <div
+        onMouseDown={(e) => startDrag(e, "y", -1)}
+        className="absolute -top-1 right-0 left-0 z-10 h-2 cursor-row-resize transition-colors hover:bg-accent/30"
+      />
       {/* tab bar */}
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-2">
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">

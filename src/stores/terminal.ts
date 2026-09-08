@@ -13,6 +13,8 @@ export interface TermTab {
   runId?: string;
   /** Model id passed to claude via --model (agent tabs). */
   model?: string;
+  /** Run claude with --dangerously-skip-permissions. */
+  skipPermissions?: boolean;
 }
 
 interface TerminalState {
@@ -29,6 +31,7 @@ interface TerminalState {
     notificationId?: string;
     runId?: string;
     model?: string;
+    skipPermissions?: boolean;
   }) => void;
   activate: (id: string) => void;
   close: (id: string) => void;
@@ -59,12 +62,22 @@ export const useTerminal = create<TerminalState>((set, get) => ({
     }));
   },
 
-  openClaude: ({ cwd, prompt, title, notificationId, runId, model }) => {
+  openClaude: ({ cwd, prompt, title, notificationId, runId, model, skipPermissions }) => {
     const id = tabId();
     set((s) => ({
       tabs: [
         ...s.tabs,
-        { id, title, kind: "claude", cwd, seedPrompt: prompt, notificationId, runId, model },
+        {
+          id,
+          title,
+          kind: "claude",
+          cwd,
+          seedPrompt: prompt,
+          notificationId,
+          runId,
+          model,
+          skipPermissions,
+        },
       ],
       activeId: id,
       open: true,

@@ -20,6 +20,7 @@ import { useAgents } from "../../stores/agents";
 import { useSlackAi } from "../../stores/slackAi";
 import type { AppNotification, SectionId, NotificationType } from "../../lib/types";
 import { cn, relativeTime } from "../../lib/utils";
+import { usePaneSize } from "../../lib/usePaneSize";
 import { SourceBadge, sourceLabel } from "../../components/ui/SourceBadge";
 import { Chip } from "../../components/ui/Chip";
 import { IconButton } from "../../components/ui/IconButton";
@@ -177,6 +178,7 @@ export function NotificationList() {
   const markRead = useInbox((s) => s.setState);
   const visible = filterBySection(items, section);
   const [groupBy, setGroupBy] = useState<GroupKey>("none");
+  const [listWidth, startListDrag] = usePaneSize("inbox-list", 380, 300, 680);
   useEffect(() => setGroupBy("none"), [section]);
 
   const groupOptions = SECTION_GROUPS[section] ?? ["none"];
@@ -224,7 +226,15 @@ export function NotificationList() {
   };
 
   return (
-    <section className="flex h-full w-95 shrink-0 flex-col border-r border-line bg-surface">
+    <section
+      style={{ width: listWidth }}
+      className="relative flex h-full shrink-0 flex-col border-r border-line bg-surface"
+    >
+      {/* drag handle: resize the list pane width */}
+      <div
+        onMouseDown={(e) => startListDrag(e, "x", 1)}
+        className="absolute top-0 -right-1 z-10 h-full w-2 cursor-col-resize transition-colors hover:bg-accent/30"
+      />
       <header data-tauri-drag-region className="flex h-13 shrink-0 items-center px-4">
         <h1 className="text-[15px] font-semibold tracking-tight">{sectionTitles[section]}</h1>
         <span className="ml-2 text-xs text-ink-3 tabular-nums">{visible.length}</span>
