@@ -66,11 +66,28 @@ pub async fn ai_source_sync(
     source: String,
 ) -> Result<usize, String> {
     valid_source(&source)?;
-    let (enabled, about_me) = {
+    let (enabled, about_me, since) = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_millis() as i64;
+        // Incremental: only look at activity after the last successful round
+        // (30 min overlap), unless that round is older than the source's full
+        // window — then re-read the whole window.
+        let full_window_ms: i64 = if source == "granola" {
+            48 * 3_600_000
+        } else {
+            7 * 86_400_000
+        };
+        let since = kv(&conn, &format!("{source}:ai_last_sync"))
+            .and_then(|s| s.parse::<i64>().ok())
+            .filter(|t| now - t < full_window_ms)
+            .map(|t| t - 30 * 60_000);
         (
             kv(&conn, &format!("{source}:ai_enabled")).as_deref() == Some("1"),
             kv(&conn, "slack:about_me").unwrap_or_default(),
+            since,
         )
     };
     if !enabled {
@@ -79,8 +96,8 @@ pub async fn ai_source_sync(
 
     let src = source.clone();
     let result = tauri::async_runtime::spawn_blocking(move || match src.as_str() {
-        "notion" => crate::connectors::ai_rounds::notion_round(&about_me),
-        _ => crate::connectors::ai_rounds::granola_round(),
+        "notion" => crate::connectors::ai_rounds::notion_round(&about_me, since),
+        _ => crate::connectors::ai_rounds::granola_round(since),
     })
     .await
     .map_err(|e| e.to_string())?;

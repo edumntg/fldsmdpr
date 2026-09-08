@@ -219,11 +219,27 @@ pub fn slack_set_ai(db: State<AppDb>, enabled: bool, about_me: String) -> Result
 /// slower cadence by the frontend, not from the fast run_sync.
 #[tauri::command]
 pub async fn slack_ai_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<usize, String> {
-    let (enabled, about_me) = {
+    let (enabled, about_me, incr) = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_millis() as i64;
+        // Incremental round when the last one is recent enough (< 7 days):
+        // claude only reads messages after it (30 min overlap for safety) and
+        // merges them into the stored summaries instead of re-reading the week.
+        let incr = kv_get(&conn, AI_LAST_SYNC_KV)
+            .and_then(|s| s.parse::<i64>().ok())
+            .filter(|t| now - t < 7 * 86_400_000)
+            .map(|t| crate::connectors::slack::SlackIncremental {
+                since_ms: t - 30 * 60_000,
+                prev_day: kv_get(&conn, DAY_SUMMARY_KV).unwrap_or_default(),
+                prev_week: kv_get(&conn, WEEK_SUMMARY_KV).unwrap_or_default(),
+            });
         (
             kv_get(&conn, AI_ENABLED_KV).as_deref() == Some("1"),
             kv_get(&conn, ABOUT_ME_KV).unwrap_or_default(),
+            incr,
         )
     };
     if !enabled {
@@ -231,7 +247,7 @@ pub async fn slack_ai_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Resul
     }
 
     let result = tauri::async_runtime::spawn_blocking(move || {
-        crate::connectors::slack::fetch_via_claude(&about_me)
+        crate::connectors::slack::fetch_via_claude(&about_me, incr.as_ref())
     })
     .await
     .map_err(|e| e.to_string())??;

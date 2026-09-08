@@ -52,16 +52,35 @@ fn parse_when(v: &Value) -> i64 {
         .unwrap_or_else(|| chrono::Utc::now().timestamp_millis())
 }
 
+fn iso_ms(ms: i64) -> String {
+    chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms)
+        .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+        .unwrap_or_default()
+}
+
+/// Window instruction: incremental ("after your last analysis") when we have a
+/// recent sync timestamp, else the full default window.
+fn window_clause(since_ms: Option<i64>, full: &str) -> String {
+    match since_ms {
+        Some(t) => format!(
+            "ONLY activity AFTER {} — you already analyzed everything before that; do NOT re-read older history",
+            iso_ms(t)
+        ),
+        None => full.to_string(),
+    }
+}
+
 /// Notion: pages/tasks assigned to me, comments mentioning me, docs awaiting my
-/// input — last 7 days max.
-pub fn notion_round(about_me: &str) -> Result<Vec<Fetched>, String> {
+/// input — incremental after `since_ms`, else last 7 days.
+pub fn notion_round(about_me: &str, since_ms: Option<i64>) -> Result<Vec<Fetched>, String> {
     let profile = if about_me.trim().is_empty() {
         "(none)"
     } else {
         about_me.trim()
     };
+    let window = window_clause(since_ms, "ONLY recent activity (last 7 days max)");
     let prompt = format!(
-        "Using the Notion tools, inspect ONLY recent activity (last 7 days max):\n\
+        "Using the Notion tools, inspect {window}:\n\
          1) pages or database tasks assigned to me; 2) comments that mention me; 3) docs shared with me that await my review or input.\n\
          My profile: {profile}\n\
          Respond with ONLY a JSON object: {{\"items\":[{{\"title\":\"\",\"text\":\"\",\"url\":\"\",\"when\":\"ISO-8601\",\"kind\":\"explicit\",\"reason\":\"\"}}]}}\n\
@@ -100,13 +119,17 @@ pub fn notion_round(about_me: &str) -> Result<Vec<Fetched>, String> {
     Ok(out)
 }
 
-/// Granola: action items from my meetings in the last 48 hours.
-pub fn granola_round() -> Result<Vec<Fetched>, String> {
-    let prompt = "Using the Granola tools, look ONLY at my meetings from the LAST 48 HOURS.\n\
+/// Granola: action items from my meetings — incremental after `since_ms`,
+/// else the last 48 hours.
+pub fn granola_round(since_ms: Option<i64>) -> Result<Vec<Fetched>, String> {
+    let window = window_clause(since_ms, "ONLY my meetings from the LAST 48 HOURS");
+    let prompt = format!(
+        "Using the Granola tools, look at {window}.\n\
         Extract action items that are mine: commitments I made, questions directed at me, and decisions that require my action.\n\
-        Respond with ONLY a JSON object: {\"items\":[{\"meeting\":\"\",\"text\":\"\",\"when\":\"ISO-8601\",\"url\":\"\"}]}\n\
-        - \"text\": the action item in one sentence. Max 15 items. If none or Granola unavailable: {\"items\":[]}.";
-    let obj = run_round("mcp__claude_ai_Granola", prompt, 300)?;
+        Respond with ONLY a JSON object: {{\"items\":[{{\"meeting\":\"\",\"text\":\"\",\"when\":\"ISO-8601\",\"url\":\"\"}}]}}\n\
+        - \"text\": the action item in one sentence. Max 15 items. If none or Granola unavailable: {{\"items\":[]}}."
+    );
+    let obj = run_round("mcp__claude_ai_Granola", &prompt, 300)?;
     let items = obj["items"].as_array().cloned().unwrap_or_default();
 
     // All action items per meeting, so each notification can show its

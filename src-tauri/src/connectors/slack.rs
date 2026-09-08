@@ -148,12 +148,38 @@ pub struct SlackAiResult {
     pub week_summary: String,
 }
 
-fn build_prompt(about_me: &str) -> String {
+/// State for incremental rounds: only read messages after `since_ms` and merge
+/// them into the previous summaries instead of re-reading the whole window.
+pub struct SlackIncremental {
+    pub since_ms: i64,
+    pub prev_day: String,
+    pub prev_week: String,
+}
+
+fn build_prompt(about_me: &str, incr: Option<&SlackIncremental>) -> String {
     let profile = if about_me.trim().is_empty() {
         "(no profile provided)".to_string()
     } else {
         about_me.trim().to_string()
     };
+    let incremental = incr
+        .map(|i| {
+            let iso = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(i.since_ms)
+                .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+                .unwrap_or_default();
+            format!(
+                "\n\nINCREMENTAL MODE — you already analyzed everything before {iso}. \
+                 Read ONLY messages posted AFTER {iso}; do NOT re-read older history (this is what makes the round fast). \
+                 \"items\" and \"tasks\": only from those new messages. \
+                 For the summaries, MERGE the new messages into your previous ones below and return the FULL updated arrays: \
+                 keep still-relevant entries, update entries the new messages change, add new entries, and drop entries older than each window (daySummary = last 24h, weekSummary = last 7 days). \
+                 If there are no new messages, return empty items/tasks and the previous summaries pruned to their windows.\n\
+                 Previous daySummary: {}\nPrevious weekSummary: {}",
+                if i.prev_day.is_empty() { "[]" } else { &i.prev_day },
+                if i.prev_week.is_empty() { "[]" } else { &i.prev_week },
+            )
+        })
+        .unwrap_or_default();
     format!(
         "You have Slack access via MCP tools. Do THREE things, inspecting ONLY recent messages (never older than 7 days):\n\n\
          1) LAST 24 HOURS — actionable items that need my attention: @-mentions of me, DMs to me, thread replies where I'm involved, and messages relevant to me even without an @-mention (about services I own, my projects, my name, or decisions affecting my team).\n\n\
@@ -167,7 +193,7 @@ fn build_prompt(about_me: &str) -> String {
          - items: last 24h only. \"kind\" is \"explicit\" for @mentions/DMs/thread replies, or \"implicit\" for inferred relevance (short justification in \"reason\"). \"text\" trimmed ~200 chars. \"ts\" = Slack message timestamp. Skip bots. Max 25 items.\n\
          - daySummary: 3-8 granular, self-contained bullet items covering the last 24h. weekSummary: 3-10 items covering the last 7 days max (themes, decisions, pending follow-ups). Each item: \"text\" (1-2 sentences), \"channel\" where it happened, and \"actionable\": true ONLY if it describes concrete work I could delegate to a coding agent (a bug, fix request, code task) — false for FYI/decisions/social.\n\
          - tasks: max 10, last 7 days. \"key\" is a short kebab-case slug derived from the task's core subject (e.g. \"fix-payout-webhook-500s\") — the SAME underlying task must always produce the SAME key across runs, so never include dates or message ids in it. \"title\" is imperative (\"Fix …\", \"Review …\"), \"detail\" 1-2 sentences of context, \"ts\" = timestamp of the triggering message. \"urgency\" is \"high\" ONLY when the messages say it's urgent/blocking/ASAP or production is affected — otherwise \"normal\". Only real, still-open asks — don't invent tasks and skip anything already resolved in the thread.\n\
-         If nothing notable, return one item saying so. If Slack is unavailable, return {{\"items\":[],\"daySummary\":[],\"weekSummary\":[],\"tasks\":[]}}."
+         If nothing notable, return one item saying so. If Slack is unavailable, return {{\"items\":[],\"daySummary\":[],\"weekSummary\":[],\"tasks\":[]}}.{incremental}"
     )
 }
 
@@ -186,8 +212,11 @@ pub(crate) fn result_envelope(raw: &str) -> Option<Value> {
 }
 
 /// Runs the headless claude query and parses items + summaries.
-pub fn fetch_via_claude(about_me: &str) -> Result<SlackAiResult, String> {
-    let prompt = build_prompt(about_me);
+pub fn fetch_via_claude(
+    about_me: &str,
+    incr: Option<&SlackIncremental>,
+) -> Result<SlackAiResult, String> {
+    let prompt = build_prompt(about_me, incr);
     let (raw, stderr, success) = run_claude_to_files(
         &[
             "-p",
