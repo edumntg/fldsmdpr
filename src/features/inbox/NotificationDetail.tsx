@@ -46,6 +46,7 @@ import { SourceBadge, sourceLabel } from "../../components/ui/SourceBadge";
 import { AgentRunButton } from "../agents/AgentRunButton";
 import { AgentStatusPanel } from "../agents/AgentStatusRow";
 import { AgentFlow } from "../agents/AgentFlow";
+import { RelatedGraph, type RelatedRef } from "./RelatedGraph";
 import { useAgents } from "../../stores/agents";
 import { Collapsible } from "../../components/ui/Collapsible";
 import { Markdown } from "../../components/ui/Markdown";
@@ -214,10 +215,8 @@ function SnoozeButton({ n }: { n: AppNotification }) {
 /** Jev's verdict on the item (urgency, suggested agent action, confidence) plus
  * the PRs/tickets it judged related to a Sentry error. */
 function JevTriage({ n }: { n: AppNotification }) {
-  const items = useInbox((s) => s.items);
-  const select = useUi((s) => s.select);
   const m = n.meta ?? {};
-  let related: { id: string; title: string; p: string }[] = [];
+  let related: RelatedRef[] = [];
   try {
     related = m.jev_related ? JSON.parse(m.jev_related) : [];
   } catch {
@@ -242,23 +241,9 @@ function JevTriage({ n }: { n: AppNotification }) {
         </span>
       </div>
       {related.length > 0 && (
-        <div className="mt-2.5 flex flex-col gap-1">
+        <div className="mt-2.5">
           <p className="text-[11px] font-semibold tracking-wide text-ink-3 uppercase">Likely related</p>
-          {related.map((r) => {
-            const target = items.find((i) => i.id === r.id);
-            return (
-              <button
-                key={r.id}
-                onClick={() => target && select(target.id)}
-                disabled={!target}
-                className="press flex w-full cursor-default items-center gap-2 rounded-lg bg-surface-2/70 px-2.5 py-1.5 text-left hover:bg-surface-2 disabled:opacity-60"
-              >
-                {target && <SourceBadge source={target.source} size={12} n={target} />}
-                <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{r.title}</span>
-                <span className="shrink-0 text-[11px] text-ink-3 tabular-nums">{Math.round(Number(r.p) * 100)}%</span>
-              </button>
-            );
-          })}
+          <RelatedGraph n={n} related={related} />
         </div>
       )}
     </div>
