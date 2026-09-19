@@ -23,6 +23,7 @@ import { useSlackAi } from "./stores/slackAi";
 const SettingsView = lazy(() => import("./features/settings/SettingsView").then((m) => ({ default: m.SettingsView })));
 const AgentsView = lazy(() => import("./features/agents/AgentsView").then((m) => ({ default: m.AgentsView })));
 const AskView = lazy(() => import("./features/ask/AskView").then((m) => ({ default: m.AskView })));
+const FlowView = lazy(() => import("./features/flow/FlowView").then((m) => ({ default: m.FlowView })));
 const TerminalDrawer = lazy(() =>
   import("./features/terminal/TerminalDrawer").then((m) => ({ default: m.TerminalDrawer })),
 );
@@ -68,6 +69,8 @@ export default function App() {
               <TodayView />
             ) : section === "ask" ? (
               <AskView />
+            ) : section === "flow" ? (
+              <FlowView />
             ) : (
               <>
                 <NotificationList />

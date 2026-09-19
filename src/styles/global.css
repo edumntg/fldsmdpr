@@ -472,6 +472,45 @@ html:not([data-tauri]) .vibrant {
   animation: pulse-dot 2.4s ease-in-out infinite;
 }
 
+/* ---------- Flow diagrams ---------- */
+:root {
+  --flow-speed: 1;
+}
+.flow-token {
+  offset-rotate: 0deg;
+  offset-anchor: center;
+  animation: flow-travel var(--dur, 700ms) var(--ease-out) forwards;
+  will-change: offset-distance;
+}
+@keyframes flow-travel {
+  from {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  to {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+@keyframes flow-pulse {
+  0%,
+  100% {
+    box-shadow: var(--shadow-card), 0 0 0 0 var(--accent-soft);
+  }
+  50% {
+    box-shadow: var(--shadow-card), 0 0 0 6px var(--accent-soft);
+  }
+}
+.animate-flow-pulse {
+  animation: flow-pulse 1.6s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
