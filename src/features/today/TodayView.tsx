@@ -1,10 +1,12 @@
-import { Calendar, ExternalLink, Flame, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar, ExternalLink, Flame, ArrowRight, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
+import { IconButton } from "../../components/ui/IconButton";
+import { JEV_URGENCY_LABEL } from "../../lib/actions";
 import { useState } from "react";
 import { useInbox } from "../../stores/inbox";
 import { useUi } from "../../stores/ui";
 import type { AppNotification, Source } from "../../lib/types";
 import { SourceBadge, sourceLabel } from "../../components/ui/SourceBadge";
-import { relativeTime, cn } from "../../lib/utils";
+import { relativeTime, cn, openExternal as openUrl, useTick } from "../../lib/utils";
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -15,34 +17,32 @@ function greeting(): string {
 
 const isToday = (ms: number) => new Date(ms).toDateString() === new Date().toDateString();
 
-/** Explicitly flagged as high priority at the source (Linear priority field,
- * Slack tasks claude judged urgent) — these jump the date ordering. */
+/** Explicitly flagged as high priority at the source (Linear priority field)
+ * — these jump the date ordering. */
 const isHighPriority = (n: AppNotification) => {
+  if (n.meta?.jev_priority) return n.meta.jev_urgency === "urgent" || n.meta.jev_urgency === "today";
   const p = n.meta?.priority?.toLowerCase();
   return p === "urgent" || p === "high";
 };
 
-const PAGE_SIZE = 10;
+const priorityLabel = (n: AppNotification) =>
+  n.meta?.jev_priority ? JEV_URGENCY_LABEL[n.meta.jev_urgency ?? ""] : n.meta?.priority;
 
-async function openUrl(url?: string) {
-  if (!url) return;
-  if ("__TAURI_INTERNALS__" in window) {
-    const { openUrl: open } = await import("@tauri-apps/plugin-opener");
-    await open(url);
-  } else {
-    window.open(url, "_blank");
-  }
-}
+const PAGE_SIZE = 10;
 
 /** Morning-briefing view: today's agenda + the highest-priority actionables. */
 export function TodayView() {
   const items = useInbox((s) => s.items);
   const setSection = useUi((s) => s.setSection);
   const select = useUi((s) => s.select);
+  const showSentry = useUi((s) => s.showSentry);
+  const toggleSentry = useUi((s) => s.toggleSentry);
   const [page, setPage] = useState(0);
   const [filter, setFilter] = useState<Source | null>(null);
+  useTick();
 
-  const active = items.filter((n) => n.state !== "done");
+  // Sentry stays out of the digest unless toggled on (Errors section always has it).
+  const active = items.filter((n) => n.state !== "done" && (showSentry || n.source !== "sentry"));
   const agenda = active
     .filter((n) => n.source === "gcal" && isToday(n.createdAt))
     .sort((a, b) => a.createdAt - b.createdAt);
@@ -80,6 +80,15 @@ export function TodayView() {
     <section className="flex h-full min-w-0 flex-1 flex-col">
       <header data-tauri-drag-region className="flex h-13 shrink-0 items-center px-5">
         <h1 className="text-[15px] font-semibold tracking-tight">Today</h1>
+        <div className="ml-auto">
+          <IconButton
+            label={showSentry ? "Hiding Sentry errors" : "Show Sentry errors here"}
+            onClick={toggleSentry}
+            className={cn(showSentry && "bg-src-sentry/12 text-src-sentry hover:bg-src-sentry/12 hover:text-src-sentry")}
+          >
+            <Flame size={15} />
+          </IconButton>
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto p-5 pt-1">
@@ -98,7 +107,7 @@ export function TodayView() {
                   key={source}
                   onClick={() => toggleFilter(source)}
                   className={cn(
-                    "flex cursor-default items-center gap-2 rounded-xl border py-1.5 pr-3 pl-1.5 shadow-card transition-colors",
+                    "press flex cursor-default items-center gap-2 rounded-xl border py-1.5 pr-3 pl-1.5 shadow-card",
                     filter === source
                       ? "border-accent bg-accent-soft"
                       : "border-line bg-surface-2 hover:border-line-strong",
@@ -175,8 +184,9 @@ export function TodayView() {
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
                         {isHighPriority(n) && (
-                          <span className="shrink-0 rounded-pill bg-danger/10 px-1.5 py-px text-[10px] font-semibold text-danger">
-                            {n.meta?.priority}
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-pill bg-danger/10 px-1.5 py-px text-[10px] font-semibold text-danger">
+                            {n.meta?.jev_priority && <Sparkles size={9} />}
+                            {priorityLabel(n)}
                           </span>
                         )}
                         <span

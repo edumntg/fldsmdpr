@@ -4,8 +4,10 @@ import { ArrowLeft, ArrowRight, PartyPopper, Rocket, SkipForward, X } from "luci
 import { kvGet, kvSet } from "../../lib/ipc";
 import { PROVIDER_META } from "../connections/providerMeta";
 import { ConnectionCard } from "../connections/ConnectionCard";
-import { SlackConnectionCard } from "../connections/SlackConnectionCard";
 import { CalendarCard } from "../connections/CalendarCard";
+import { SlackConnectionCard } from "../connections/SlackConnectionCard";
+import { JevCard } from "../connections/JevCard";
+import { Sparkles } from "lucide-react";
 import { useConnections, connectedCount } from "../../stores/connections";
 import { Button } from "../../components/ui/Button";
 import { cn } from "../../lib/utils";
@@ -31,7 +33,7 @@ export const useOnboarding = create<OnboardingState>((set) => ({
   },
 }));
 
-// steps: 0 = welcome, 1..n = one per provider, n+1 = finish
+// steps: 0 = welcome, 1..n = one per provider, n+1 = AI triage (OpenRouter key), n+2 = finish
 export function Onboarding() {
   const { open, close } = useOnboarding();
   const statuses = useConnections((s) => s.statuses);
@@ -44,7 +46,8 @@ export function Onboarding() {
   if (!open) return null;
 
   const providers = PROVIDER_META;
-  const lastStep = providers.length + 1;
+  const jevStep = providers.length + 1;
+  const lastStep = providers.length + 2;
   const provider = step >= 1 && step <= providers.length ? providers[step - 1] : null;
 
   // On a provider step, Next unlocks only once the connection is verified.
@@ -53,6 +56,7 @@ export function Onboarding() {
     ? (statuses.find((s) => s.id === provider.id)?.connected ?? false)
     : false;
   // Calendar connects via macOS (not a token in `statuses`), so it never gates.
+  // Slack: connecting here switches it on; "Skip this connection" leaves it off.
   const mustConnect =
     provider !== null && provider.available && provider.id !== "gcal" && !providerConnected;
 
@@ -68,6 +72,7 @@ export function Onboarding() {
             <h2 className="text-[14px] font-semibold tracking-tight">
               {step === 0 && "Welcome to FLDSMDPR"}
               {provider && `Connect ${provider.name}`}
+              {step === jevStep && "AI triage (optional)"}
               {step === lastStep && "You're all set"}
             </h2>
             <p className="text-xs text-ink-3">
@@ -105,7 +110,7 @@ export function Onboarding() {
               </div>
               <h3 className="text-[16px] font-semibold">One inbox for everything actionable</h3>
               <p className="max-w-md text-[13px] leading-5.5 text-ink-2">
-                FLDSMDPR pulls PR reviews, Slack mentions, Linear tickets, and calendar events into a
+                FLDSMDPR pulls PR reviews, Linear tickets, Sentry errors, and calendar events into a
                 single prioritized inbox. This guide walks you through connecting each tool — where to
                 create the key, which scopes to grant, and where to paste it. Each connection takes about
                 two minutes, and you can skip any of them and come back later from{" "}
@@ -122,6 +127,21 @@ export function Onboarding() {
             ) : (
               <ConnectionCard meta={provider} defaultExpanded />
             ))}
+
+          {step === jevStep && (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-start gap-2.5 rounded-xl bg-src-agent/8 p-3 text-[13px] leading-5 text-ink-2">
+                <Sparkles size={15} className="mt-0.5 shrink-0 text-src-agent" />
+                <span>
+                  Optional but recommended: with an OpenRouter key, a fast decision model (Jev) ranks every
+                  item by urgency, suggests what an agent should do, links Sentry errors to PRs, and flags
+                  Slack messages relevant to you. Costs well under a cent per sync. Skip it and everything
+                  still works with the connectors' own priorities.
+                </span>
+              </div>
+              <JevCard />
+            </div>
+          )}
 
           {step === lastStep && (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
@@ -165,7 +185,7 @@ export function Onboarding() {
                 title={mustConnect ? `Connect ${provider?.name} to continue, or skip it` : undefined}
                 onClick={() => setStep((s) => s + 1)}
               >
-                {provider ? "Next" : "Get started"}
+                {provider || step === jevStep ? "Next" : "Get started"}
                 <ArrowRight size={14} />
               </Button>
             ) : (

@@ -2,10 +2,12 @@ mod agents;
 mod ai_sources;
 mod ask;
 mod calendar;
+mod claude_cli;
 mod commands;
 mod connectors;
 mod db;
 mod inbox;
+mod jev;
 mod providers;
 mod pty;
 mod secrets;
@@ -47,6 +49,23 @@ pub fn run() {
             inbox::set_notification_state,
             inbox::snooze_notification,
             inbox::search_notifications,
+            inbox::mark_read_many,
+            jev::jev_status,
+            jev::jev_connect,
+            jev::jev_disconnect,
+            jev::jev_set_enabled,
+            jev::jev_run,
+            jev::jev_agent_outcome,
+            slack::slack_connect,
+            slack::slack_list_channels,
+            slack::slack_resolve_channel,
+            slack::slack_get_channels,
+            slack::slack_set_channels,
+            slack::slack_ai_status,
+            slack::slack_ai_check,
+            slack::slack_set_enabled,
+            slack::slack_set_summaries,
+            slack::slack_ai_sync,
             agents::orca_status,
             agents::orca_repos,
             agents::agent_session_upsert,
@@ -70,15 +89,6 @@ pub fn run() {
             ask::ask_claude,
             inbox::agent_notify,
             inbox::notification_set_meta,
-            slack::slack_connect,
-            slack::slack_list_channels,
-            slack::slack_resolve_channel,
-            slack::slack_get_channels,
-            slack::slack_set_channels,
-            slack::slack_ai_status,
-            slack::slack_ai_check,
-            slack::slack_set_ai,
-            slack::slack_ai_sync,
             ai_sources::ai_source_status,
             ai_sources::ai_source_set,
             ai_sources::ai_source_sync,

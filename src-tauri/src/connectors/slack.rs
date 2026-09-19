@@ -1,9 +1,7 @@
 use super::{Fetched, FetchedRelevance};
+use crate::claude_cli::{extract_json_object, result_envelope, run_claude_to_files};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
 
 // ============================================================================
 // Slack via headless `claude` + the official Slack MCP connector.
@@ -14,121 +12,6 @@ use std::time::{Duration, Instant};
 // relevance (the differentiator) for free. Slower (~1 min), so it runs on its
 // own slower cadence, separate from the fast GitHub/Linear sync.
 // ============================================================================
-
-pub fn claude_bin() -> Option<PathBuf> {
-    if let Ok(out) = std::process::Command::new("which").arg("claude").output() {
-        if out.status.success() {
-            let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !p.is_empty() {
-                return Some(PathBuf::from(p));
-            }
-        }
-    }
-    [
-        dirs_home().map(|h| h.join(".local/bin/claude")),
-        Some(PathBuf::from("/opt/homebrew/bin/claude")),
-        Some(PathBuf::from("/usr/local/bin/claude")),
-    ]
-    .into_iter()
-    .flatten()
-    .find(|p| p.exists())
-}
-
-fn dirs_home() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
-}
-
-/// Appends a diagnostic line to ~/Library/Logs/FLDSMDPR/slack-ai.log. Logs
-/// mechanics only (timings, exit codes, error strings) — never message content.
-fn ai_log(line: &str) {
-    let Some(home) = dirs_home() else { return };
-    let dir = home.join("Library/Logs/FLDSMDPR");
-    let _ = std::fs::create_dir_all(&dir);
-    let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-    let entry = format!("[{ts}] {line}\n");
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(dir.join("slack-ai.log"))
-    {
-        let _ = f.write_all(entry.as_bytes());
-    }
-}
-
-/// Runs claude (by full path) with **stdin closed** and **stdout/stderr
-/// redirected to temp files**, with a hard timeout. Both details are load-
-/// bearing, learned from real hangs when spawned from the GUI app:
-///  - `claude -p` waits for EOF on a non-TTY stdin, so stdin must be null;
-///  - piped stdout/stderr that nobody drains fill up (64KB) and deadlock the
-///    child mid-run — real files have no such limit.
-///
-/// A shell wrapper (`zsh -ilc`) is also unusable: without a TTY it detaches the
-/// job and returns immediately. Direct spawn is verified to authenticate fine
-/// in the launchd (GUI app) context.
-pub(crate) fn run_claude_to_files(
-    args: &[&str],
-    secs: u64,
-) -> Result<(String, String, bool), String> {
-    use std::fs;
-
-    let bin = claude_bin().ok_or("The `claude` CLI wasn't found on this machine.")?;
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let base = std::env::temp_dir().join(format!("fldsmdpr-claude-{}-{nanos}", std::process::id()));
-    let out_path = base.with_extension("out");
-    let err_path = base.with_extension("err");
-    let out_file = fs::File::create(&out_path).map_err(|e| e.to_string())?;
-    let err_file = fs::File::create(&err_path).map_err(|e| e.to_string())?;
-
-    let mut child = Command::new(&bin)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(out_file))
-        .stderr(Stdio::from(err_file))
-        .spawn()
-        .map_err(|e| format!("Couldn't run claude: {e}"))?;
-
-    let start = Instant::now();
-    let status = loop {
-        if let Some(st) = child.try_wait().map_err(|e| e.to_string())? {
-            break st;
-        }
-        if start.elapsed() > Duration::from_secs(secs) {
-            let _ = child.kill();
-            let _ = child.wait();
-            let err_head: String = fs::read_to_string(&err_path)
-                .unwrap_or_default()
-                .chars()
-                .take(300)
-                .collect();
-            ai_log(&format!(
-                "TIMEOUT after {secs}s; args[0..2]={:?}; stderr_head={err_head:?}",
-                &args[..args.len().min(2)]
-            ));
-            let _ = fs::remove_file(&out_path);
-            let _ = fs::remove_file(&err_path);
-            return Err(format!("claude timed out after {secs}s"));
-        }
-        std::thread::sleep(Duration::from_millis(300));
-    };
-
-    let stdout = fs::read_to_string(&out_path).unwrap_or_default();
-    let stderr = fs::read_to_string(&err_path).unwrap_or_default();
-    let _ = fs::remove_file(&out_path);
-    let _ = fs::remove_file(&err_path);
-    ai_log(&format!(
-        "claude {:?} finished in {}s; success={}; stdout={}B stderr={}B",
-        &args[..args.len().min(2)],
-        start.elapsed().as_secs(),
-        status.success(),
-        stdout.len(),
-        stderr.len()
-    ));
-    Ok((stdout, stderr, status.success()))
-}
 
 /// Returns true if the claude CLI reports the Slack MCP as connected.
 pub fn claude_slack_ready() -> bool {
@@ -187,28 +70,14 @@ fn build_prompt(about_me: &str, incr: Option<&SlackIncremental>) -> String {
          3) TASKS — concrete work items I should own, extracted from those conversations: bugs reported to me, fixes or code changes requested of me, reviews or investigations asked of me. Not FYIs, not decisions, not other people's work.\n\n\
          My profile: {profile}\n\n\
          Respond with ONLY a JSON object as the final content:\n\
-         {{\"items\":[{{\"channel\":\"\",\"from\":\"\",\"text\":\"\",\"ts\":\"\",\"permalink\":\"\",\"kind\":\"explicit\",\"reason\":\"\"}}],\
+         {{\"items\":[{{\"channel\":\"\",\"from\":\"\",\"from_me\":false,\"text\":\"\",\"ts\":\"\",\"permalink\":\"\",\"kind\":\"explicit\",\"reason\":\"\"}}],\
 \"daySummary\":[{{\"text\":\"\",\"channel\":\"\",\"actionable\":false}}],\"weekSummary\":[{{\"text\":\"\",\"channel\":\"\",\"actionable\":false}}],\
 \"tasks\":[{{\"key\":\"\",\"title\":\"\",\"detail\":\"\",\"channel\":\"\",\"from\":\"\",\"ts\":\"\",\"permalink\":\"\",\"urgency\":\"normal\"}}]}}\n\
-         - items: last 24h only. \"kind\" is \"explicit\" for @mentions/DMs/thread replies, or \"implicit\" for inferred relevance (short justification in \"reason\"). \"text\" trimmed ~200 chars. \"ts\" = Slack message timestamp. Skip bots. Max 25 items.\n\
+         - items: last 24h only. \"kind\" is \"explicit\" for @mentions/DMs/thread replies, or \"implicit\" for inferred relevance (short justification in \"reason\"). \"from_me\" is true when I wrote the message (include my own only when I'm still waiting on an answer). \"text\" trimmed ~200 chars. \"ts\" = Slack message timestamp. Skip bots. Max 25 items.\n\
          - daySummary: 3-8 granular, self-contained bullet items covering the last 24h. weekSummary: 3-10 items covering the last 7 days max (themes, decisions, pending follow-ups). Each item: \"text\" (1-2 sentences), \"channel\" where it happened, and \"actionable\": true ONLY if it describes concrete work I could delegate to a coding agent (a bug, fix request, code task) — false for FYI/decisions/social.\n\
          - tasks: max 10, last 7 days. \"key\" is a short kebab-case slug derived from the task's core subject (e.g. \"fix-payout-webhook-500s\") — the SAME underlying task must always produce the SAME key across runs, so never include dates or message ids in it. \"title\" is imperative (\"Fix …\", \"Review …\"), \"detail\" 1-2 sentences of context, \"ts\" = timestamp of the triggering message. \"urgency\" is \"high\" ONLY when the messages say it's urgent/blocking/ASAP or production is affected — otherwise \"normal\". Only real, still-open asks — don't invent tasks and skip anything already resolved in the thread.\n\
          If nothing notable, return one item saying so. If Slack is unavailable, return {{\"items\":[],\"daySummary\":[],\"weekSummary\":[],\"tasks\":[]}}.{incremental}"
     )
-}
-
-/// claude's stdout can contain several concatenated JSON objects; the answer is
-/// the one with `"type":"result"` (kept last if repeated).
-pub(crate) fn result_envelope(raw: &str) -> Option<Value> {
-    let mut envelope = None;
-    for v in serde_json::Deserializer::from_str(raw.trim()).into_iter::<Value>() {
-        match v {
-            Ok(v) if v["type"] == "result" || v.get("result").is_some() => envelope = Some(v),
-            Ok(_) => {}
-            Err(_) => break,
-        }
-    }
-    envelope
 }
 
 /// Runs the headless claude query and parses items + summaries.
@@ -284,9 +153,25 @@ pub fn fetch_via_claude(
         let reason = it["reason"].as_str().unwrap_or("").to_string();
         let implicit = kind == "implicit";
 
+        let from_me = it["from_me"].as_bool().unwrap_or(false);
         let mut meta = HashMap::new();
         meta.insert("channel".into(), channel.clone());
         meta.insert("from".into(), from.clone());
+        meta.insert(
+            "direction".into(),
+            if from_me { "sent" } else { "received" }.into(),
+        );
+        meta.insert(
+            "kind".into(),
+            if channel.eq_ignore_ascii_case("dm") {
+                "dm"
+            } else if implicit {
+                "channel"
+            } else {
+                "mention"
+            }
+            .into(),
+        );
 
         out_items.push(Fetched {
             id: format!("slack:{ts}"),
@@ -385,45 +270,6 @@ fn slugify(s: &str) -> String {
         }
     }
     out.trim_matches('-').to_string()
-}
-
-/// Extracts the first balanced JSON value starting at `open`/`close` bracket from
-/// text that may be wrapped in prose or ```json fences (the org compliance layer
-/// can prepend a warning).
-fn extract_balanced(s: &str, open: char, close: char) -> Option<&str> {
-    let start = s.find(open)?;
-    let bytes = s.as_bytes();
-    let mut depth = 0i32;
-    let mut in_str = false;
-    let mut escaped = false;
-    for i in start..bytes.len() {
-        let c = bytes[i] as char;
-        if in_str {
-            if escaped {
-                escaped = false;
-            } else if c == '\\' {
-                escaped = true;
-            } else if c == '"' {
-                in_str = false;
-            }
-            continue;
-        }
-        if c == '"' {
-            in_str = true;
-        } else if c == open {
-            depth += 1;
-        } else if c == close {
-            depth -= 1;
-            if depth == 0 {
-                return Some(&s[start..=i]);
-            }
-        }
-    }
-    None
-}
-
-pub(crate) fn extract_json_object(s: &str) -> Option<&str> {
-    extract_balanced(s, '{', '}')
 }
 
 /// Slack credentials. `cookie` holds the `xoxd-…` value for session-token
@@ -530,91 +376,334 @@ pub async fn channel_name(auth: &SlackAuth, channel_id: &str) -> Result<String, 
         .unwrap_or_else(|| channel_id.to_string()))
 }
 
-/// Fetches recent messages from opted-in channels and emits a notification for
-/// each one that explicitly @-mentions the authed user. Implicit / AI-inferred
-/// detection is layered on next (triage pipeline).
+/// One Slack message plus what we know about it, pre-judgment.
+struct Msg {
+    channel_id: String,
+    channel_name: String,
+    is_dm: bool,
+    ts: String,
+    text: String,
+    author_id: String,
+    from_me: bool,
+    mentions_me: bool,
+    in_thread: bool,
+    reply_count: u64,
+}
+
+/// Direct messages (im/mpim) the user is in — best effort: enterprise
+/// workspaces may restrict `conversations.list`, in which case only the
+/// opted-in channels are read.
+async fn dm_channels(client: &reqwest::Client, auth: &SlackAuth) -> Vec<(String, String)> {
+    let Ok(body) = api(
+        client,
+        auth,
+        "conversations.list",
+        &[
+            ("types", "im,mpim"),
+            ("exclude_archived", "true"),
+            ("limit", "200"),
+        ],
+    )
+    .await
+    else {
+        return Vec::new();
+    };
+    body["channels"]
+        .as_array()
+        .map(|chs| {
+            chs.iter()
+                .filter_map(|c| {
+                    c["id"]
+                        .as_str()
+                        .map(|id| (id.to_string(), "DM".to_string()))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Fast path: reads recent messages from the opted-in channels and the user's
+/// DMs over the Web API (milliseconds, no Slack app), then decides what
+/// matters:
+///  - explicit: @-mentions of the user and DMs from others → always items;
+///  - implicit: other channel messages → Jev judges "relevant to the user";
+///  - follow-ups: the user's own unanswered asks → Jev judges "awaits a reply".
+///
+/// Without a Jev key only the explicit rules apply.
 pub async fn fetch(
     auth: &SlackAuth,
     channels: &[(String, String)],
-) -> Result<Vec<Fetched>, String> {
-    if channels.is_empty() {
-        return Ok(Vec::new());
-    }
+    since_ts: f64,
+    jev_key: Option<&str>,
+    about_me: &str,
+) -> Result<(Vec<Fetched>, f64), String> {
     let client = client()?;
 
     let whoami = api(&client, auth, "auth.test", &[]).await?;
     let me = whoami["user_id"].as_str().unwrap_or_default().to_string();
+    if me.is_empty() {
+        return Err("Slack didn't return the user id".into());
+    }
     let team_url = whoami["url"]
         .as_str()
         .unwrap_or("https://slack.com/")
         .to_string();
     let mention_token = format!("<@{me}>");
 
-    let mut user_names: HashMap<String, String> = HashMap::new();
-    let mut out = Vec::new();
+    let mut targets: Vec<(String, String, bool)> = channels
+        .iter()
+        .map(|(id, n)| (id.clone(), n.clone(), false))
+        .collect();
+    for (id, n) in dm_channels(&client, auth).await {
+        if !targets.iter().any(|t| t.0 == id) {
+            targets.push((id, n, true));
+        }
+    }
+    if targets.is_empty() {
+        return Ok((Vec::new(), since_ts));
+    }
 
-    for (channel_id, channel_name) in channels {
+    let oldest = format!("{since_ts:.6}");
+    let mut msgs: Vec<Msg> = Vec::new();
+    let mut newest = since_ts;
+    for (channel_id, channel_name, is_dm) in &targets {
         // A channel we can't read shouldn't abort the whole sync.
-        let history = match api(
+        let Ok(history) = api(
             &client,
             auth,
             "conversations.history",
-            &[("channel", channel_id), ("limit", "40")],
+            &[
+                ("channel", channel_id),
+                ("oldest", &oldest),
+                ("limit", "100"),
+            ],
         )
         .await
-        {
-            Ok(v) => v,
-            Err(_) => continue,
+        else {
+            continue;
         };
-
         let Some(messages) = history["messages"].as_array() else {
             continue;
         };
-
-        for msg in messages {
-            let text = msg["text"].as_str().unwrap_or("");
-            if me.is_empty() || !text.contains(&mention_token) {
+        for m in messages {
+            // Joins, bots, pins… carry a subtype; real messages don't.
+            if m.get("subtype").is_some() || m.get("bot_id").is_some() {
                 continue;
             }
-            let ts = msg["ts"].as_str().unwrap_or_default();
-            if ts.is_empty() {
+            let ts = m["ts"].as_str().unwrap_or_default();
+            let text = m["text"].as_str().unwrap_or("");
+            if ts.is_empty() || text.trim().is_empty() {
                 continue;
             }
-            let author_id = msg["user"].as_str().unwrap_or("");
-            let author = resolve_user(&client, auth, author_id, &mut user_names).await;
-
-            let created_ms = ts
-                .split('.')
-                .next()
-                .and_then(|s| s.parse::<i64>().ok())
-                .map(|s| s * 1000)
-                .unwrap_or(0);
-
-            let permalink = format!("{team_url}archives/{channel_id}/p{}", ts.replace('.', ""));
-            let snippet = humanize(text, &me, &mention_token);
-
-            let mut meta = HashMap::new();
-            meta.insert("channel".into(), channel_name.clone());
-            if !author.is_empty() {
-                meta.insert("from".into(), author.clone());
-            }
-
-            out.push(Fetched {
-                id: format!("slack:{channel_id}:{ts}"),
-                source: "slack",
-                ntype: "mention",
-                title: format!("{author} mentioned you in {channel_name}"),
-                snippet,
-                url: Some(permalink),
-                created_at: created_ms,
-                priority: 82.0,
-                meta,
-                relevance: None,
+            newest = newest.max(ts.parse::<f64>().unwrap_or(0.0));
+            let author_id = m["user"].as_str().unwrap_or("").to_string();
+            msgs.push(Msg {
+                channel_id: channel_id.clone(),
+                channel_name: channel_name.clone(),
+                is_dm: *is_dm,
+                ts: ts.to_string(),
+                text: text.to_string(),
+                from_me: author_id == me,
+                mentions_me: text.contains(&mention_token),
+                in_thread: m.get("thread_ts").is_some() && m["thread_ts"].as_str() != Some(ts),
+                reply_count: m["reply_count"].as_u64().unwrap_or(0),
+                author_id,
             });
         }
     }
 
-    Ok(out)
+    // ---- judgment ----
+    // explicit → in; the rest split into Jev candidates (cap keeps a first run bounded).
+    let mut keep: Vec<(usize, &'static str, Option<f64>)> = Vec::new(); // (idx, kind, p)
+    let mut implicit: Vec<usize> = Vec::new();
+    let mut own: Vec<usize> = Vec::new();
+    for (i, m) in msgs.iter().enumerate() {
+        if m.from_me {
+            if m.reply_count == 0 && !m.in_thread && m.text.len() > 12 {
+                own.push(i);
+            }
+        } else if m.mentions_me || m.is_dm {
+            keep.push((i, "explicit", None));
+        } else {
+            implicit.push(i);
+        }
+    }
+    implicit.truncate(150);
+    own.truncate(40);
+
+    if let Some(key) = jev_key {
+        let jc = crate::jev::client_for_connectors()?;
+        let relevant_q = serde_json::json!({
+            "relevant": {
+                "type": "noul",
+                "instructions": "This Slack message concerns the user personally even without an @-mention: their work, a service or code they own, a decision affecting their team, or a question they should answer.",
+                "criteria": {
+                    "true": "The user would want to read this today and might need to respond or act.",
+                    "false": "General chatter, someone else's topic, or information the user doesn't need."
+                }
+            }
+        });
+        let awaiting_q = serde_json::json!({
+            "awaiting_reply": {
+                "type": "noul",
+                "instructions": "The user wrote this message. It asks someone for something (a question, a review, a decision, an action) and still expects an answer.",
+                "criteria": {
+                    "true": "A clear request or question directed at others that would normally get a reply.",
+                    "false": "A statement, an answer, an FYI, a reaction, or small talk."
+                }
+            }
+        });
+        let judge = |idx: Vec<usize>, q: Value, kind: &'static str, threshold: f64| {
+            let jc = jc.clone();
+            let key = key.to_string();
+            let states: Vec<(usize, Value)> = idx
+                .iter()
+                .map(|&i| {
+                    let m = &msgs[i];
+                    (
+                        i,
+                        serde_json::json!({
+                            "channel": m.channel_name,
+                            "is_dm": m.is_dm,
+                            "in_thread": m.in_thread,
+                            "text": m.text.chars().take(1200).collect::<String>(),
+                            "about_the_user": about_me.chars().take(600).collect::<String>(),
+                        }),
+                    )
+                })
+                .collect();
+            async move {
+                let mut out: Vec<(usize, &'static str, Option<f64>)> = Vec::new();
+                for chunk in states.chunks(8) {
+                    let handles: Vec<_> = chunk
+                        .iter()
+                        .map(|(i, st)| {
+                            let (jc, key, q, st, i) =
+                                (jc.clone(), key.clone(), q.clone(), st.clone(), *i);
+                            tauri::async_runtime::spawn(async move {
+                                crate::jev::decide(&jc, &key, st, q)
+                                    .await
+                                    .map(|a| (i, a[kind]["noul"].as_f64().unwrap_or(0.0)))
+                            })
+                        })
+                        .collect();
+                    for h in handles {
+                        if let Ok(Ok((i, p))) = h.await {
+                            if p >= threshold {
+                                out.push((i, kind, Some(p)));
+                            }
+                        }
+                    }
+                }
+                out
+            }
+        };
+        keep.extend(judge(implicit, relevant_q, "relevant", 0.6).await);
+        keep.extend(judge(own, awaiting_q, "awaiting_reply", 0.65).await);
+    }
+
+    // ---- items ----
+    let mut user_names: HashMap<String, String> = HashMap::new();
+    let mut out = Vec::new();
+    for (i, kind, p) in keep {
+        let m = &msgs[i];
+        let author = if m.from_me {
+            "You".to_string()
+        } else {
+            resolve_user(&client, auth, &m.author_id, &mut user_names).await
+        };
+        let created_ms =
+            m.ts.split('.')
+                .next()
+                .and_then(|s| s.parse::<i64>().ok())
+                .map(|s| s * 1000)
+                .unwrap_or(0);
+        let permalink = format!(
+            "{team_url}archives/{}/p{}",
+            m.channel_id,
+            m.ts.replace('.', "")
+        );
+        let snippet = humanize(&m.text, &mention_token);
+
+        let mut meta = HashMap::new();
+        meta.insert("channel".into(), m.channel_name.clone());
+        meta.insert("from".into(), author.clone());
+        meta.insert(
+            "direction".into(),
+            if m.from_me { "sent" } else { "received" }.into(),
+        );
+        meta.insert(
+            "kind".into(),
+            if m.is_dm {
+                "dm"
+            } else if m.mentions_me {
+                "mention"
+            } else if m.in_thread {
+                "thread"
+            } else {
+                "channel"
+            }
+            .into(),
+        );
+        if let Some(p) = p {
+            meta.insert("jev_slack_p".into(), format!("{p:.2}"));
+        }
+
+        let (ntype, title, priority, relevance) = match kind {
+            "awaiting_reply" => (
+                "follow_up",
+                format!("Waiting for a reply in {}", m.channel_name),
+                70.0,
+                None,
+            ),
+            "relevant" => (
+                "ai_inferred",
+                format!("Relevant in {}", m.channel_name),
+                78.0,
+                Some(FetchedRelevance {
+                    kind: "implicit".into(),
+                    score: p.unwrap_or(0.7),
+                    reason: format!(
+                        "AI judged this {}% likely to concern you",
+                        (p.unwrap_or(0.7) * 100.0).round()
+                    ),
+                }),
+            ),
+            _ => (
+                "mention",
+                if m.is_dm {
+                    format!("{author} sent you a DM")
+                } else {
+                    format!("{author} mentioned you in {}", m.channel_name)
+                },
+                82.0,
+                Some(FetchedRelevance {
+                    kind: "explicit".into(),
+                    score: 1.0,
+                    reason: if m.is_dm {
+                        "Direct message".into()
+                    } else {
+                        "Directly addressed to you".into()
+                    },
+                }),
+            ),
+        };
+
+        out.push(Fetched {
+            id: format!("slack:{}:{}", m.channel_id, m.ts),
+            source: "slack",
+            ntype,
+            title,
+            snippet,
+            url: Some(permalink),
+            created_at: created_ms,
+            priority,
+            meta,
+            relevance,
+        });
+    }
+
+    Ok((out, newest))
 }
 
 async fn resolve_user(
@@ -624,7 +713,7 @@ async fn resolve_user(
     cache: &mut HashMap<String, String>,
 ) -> String {
     if user_id.is_empty() {
-        return String::new();
+        return "Someone".to_string();
     }
     if let Some(name) = cache.get(user_id) {
         return name.clone();
@@ -646,11 +735,10 @@ async fn resolve_user(
 }
 
 /// Trims to a readable snippet and replaces the self-mention token with "@you".
-fn humanize(text: &str, _me: &str, mention_token: &str) -> String {
-    let replaced = text.replace(mention_token, "@you");
-    replaced
+fn humanize(text: &str, mention_token: &str) -> String {
+    text.replace(mention_token, "@you")
         .chars()
-        .take(240)
+        .take(400)
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()

@@ -5,6 +5,9 @@ interface AskState {
   messages: ChatTurn[];
   running: boolean;
   error: string | null;
+  /** Text to seed the composer with (set by "Ask about this"); consumed on mount. */
+  prefill: string | null;
+  setPrefill: (text: string | null) => void;
   send: (question: string) => Promise<void>;
   clear: () => void;
 }
@@ -14,6 +17,8 @@ export const useAsk = create<AskState>((set, get) => ({
   messages: [],
   running: false,
   error: null,
+  prefill: null,
+  setPrefill: (prefill) => set({ prefill }),
 
   send: async (question) => {
     const q = question.trim();

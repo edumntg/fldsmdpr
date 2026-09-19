@@ -154,8 +154,12 @@ pub fn clear(conn: &rusqlite::Connection) {
 
 // ---- Slack via headless claude + MCP (primary path) ----
 
-const AI_ENABLED_KV: &str = "slack:ai_enabled";
-const ABOUT_ME_KV: &str = "slack:about_me";
+/// Master switch: Slack is opt-in. Off → no section, no fetch, no analysis.
+const ENABLED_KV: &str = "slack:enabled";
+/// Day/week summaries via headless claude — the slow part, so separately opt-in.
+const SUMMARIES_KV: &str = "slack:summaries";
+/// Newest message ts seen by the fast path (incremental reads).
+pub const LAST_TS_KV: &str = "slack:last_ts";
 const AI_LAST_SYNC_KV: &str = "slack:ai_last_sync";
 const DAY_SUMMARY_KV: &str = "slack:day_summary";
 const WEEK_SUMMARY_KV: &str = "slack:week_summary";
@@ -179,7 +183,7 @@ fn kv_put(conn: &rusqlite::Connection, key: &str, value: &str) {
 pub struct SlackAiStatus {
     pub available: bool,
     pub enabled: bool,
-    pub about_me: String,
+    pub summaries: bool,
     pub last_sync_at: Option<i64>,
     pub day_summary: String,
     pub week_summary: String,
@@ -189,9 +193,9 @@ pub struct SlackAiStatus {
 pub fn slack_ai_status(db: State<AppDb>) -> Result<SlackAiStatus, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     Ok(SlackAiStatus {
-        available: crate::connectors::slack::claude_bin().is_some(),
-        enabled: kv_get(&conn, AI_ENABLED_KV).as_deref() == Some("1"),
-        about_me: kv_get(&conn, ABOUT_ME_KV).unwrap_or_default(),
+        available: crate::claude_cli::claude_bin().is_some(),
+        enabled: is_enabled(&conn),
+        summaries: kv_get(&conn, SUMMARIES_KV).as_deref() == Some("1"),
         last_sync_at: kv_get(&conn, AI_LAST_SYNC_KV).and_then(|s| s.parse().ok()),
         day_summary: kv_get(&conn, DAY_SUMMARY_KV).unwrap_or_default(),
         week_summary: kv_get(&conn, WEEK_SUMMARY_KV).unwrap_or_default(),
@@ -207,11 +211,32 @@ pub async fn slack_ai_check() -> Result<bool, String> {
         .map_err(|e| e.to_string())
 }
 
+pub fn is_enabled(conn: &rusqlite::Connection) -> bool {
+    kv_get(conn, ENABLED_KV).as_deref() == Some("1")
+}
+
 #[tauri::command]
-pub fn slack_set_ai(db: State<AppDb>, enabled: bool, about_me: String) -> Result<(), String> {
+pub fn slack_set_summaries(db: State<AppDb>, enabled: bool) -> Result<(), String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    kv_put(&conn, AI_ENABLED_KV, if enabled { "1" } else { "0" });
-    kv_put(&conn, ABOUT_ME_KV, &about_me);
+    kv_put(&conn, SUMMARIES_KV, if enabled { "1" } else { "0" });
+    Ok(())
+}
+
+/// Fast-path cursor: newest Slack ts already read (0 = never).
+pub fn last_ts(conn: &rusqlite::Connection) -> f64 {
+    kv_get(conn, LAST_TS_KV)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.0)
+}
+
+pub fn set_last_ts(conn: &rusqlite::Connection, ts: f64) {
+    kv_put(conn, LAST_TS_KV, &format!("{ts:.6}"));
+}
+
+#[tauri::command]
+pub fn slack_set_enabled(db: State<AppDb>, enabled: bool) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    kv_put(&conn, ENABLED_KV, if enabled { "1" } else { "0" });
     Ok(())
 }
 
@@ -237,8 +262,8 @@ pub async fn slack_ai_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Resul
                 prev_week: kv_get(&conn, WEEK_SUMMARY_KV).unwrap_or_default(),
             });
         (
-            kv_get(&conn, AI_ENABLED_KV).as_deref() == Some("1"),
-            kv_get(&conn, ABOUT_ME_KV).unwrap_or_default(),
+            is_enabled(&conn) && kv_get(&conn, SUMMARIES_KV).as_deref() == Some("1"),
+            kv_get(&conn, "about_me").unwrap_or_default(),
             incr,
         )
     };

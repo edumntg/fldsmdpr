@@ -17,7 +17,19 @@ import {
   Flame,
   NotebookPen,
   Sparkles,
+  Check,
+  Clock,
+  Pin,
+  Link2,
+  ExternalLink,
+  Keyboard,
+  Palette,
+  MessageCircleQuestion,
 } from "lucide-react";
+import { markDone, snooze, togglePin, copyLink, openItem, askAbout, SNOOZE_OPTIONS } from "../../lib/actions";
+import { ACCENTS } from "../../stores/theme";
+import { isPinned } from "../../stores/inbox";
+import { useSlackAi } from "../../stores/slackAi";
 import { useUi } from "../../stores/ui";
 import { useTheme } from "../../stores/theme";
 import { useSync } from "../../stores/sync";
@@ -41,8 +53,11 @@ interface Command {
 type Row = { kind: "command"; c: Command } | { kind: "notification"; n: AppNotification };
 
 export function CommandPalette() {
-  const { paletteOpen, setPaletteOpen, setSection, select } = useUi();
+  const { paletteOpen, setPaletteOpen, setSection, select, selectedId, setHelpOpen, showSentry, toggleSentry } = useUi();
   const setThemePref = useTheme((s) => s.setPref);
+  const setAccent = useTheme((s) => s.setAccent);
+  const selected = useInbox((s) => s.items.find((n) => n.id === selectedId));
+  const slackEnabled = useSlackAi((s) => s.enabled);
   const sync = useSync((s) => s.sync);
   const startOnboarding = useOnboarding((s) => s.start);
   const [query, setQuery] = useState("");
@@ -57,12 +72,32 @@ export function CommandPalette() {
       icon,
       run: () => setSection(id),
     });
+    const itemCmds: Command[] = selected
+      ? [
+          { id: "done", label: "Mark done", hint: "e", icon: Check, run: () => markDone(selected) },
+          ...SNOOZE_OPTIONS.map((o) => ({
+            id: `snooze-${o.label}`,
+            label: `Snooze · ${o.label}`,
+            icon: Clock,
+            run: () => void snooze(selected, o.until(), o.label),
+          })),
+          { id: "pin", label: isPinned(selected) ? "Unpin" : "Pin to top", hint: "p", icon: Pin, run: () => togglePin(selected) },
+          { id: "ask-about", label: "Ask Claude about this", hint: "a", icon: MessageCircleQuestion, run: () => askAbout(selected) },
+          ...(selected.url
+            ? [
+                { id: "open", label: "Open in browser", hint: "o", icon: ExternalLink, run: () => openItem(selected) },
+                { id: "copy", label: "Copy link", hint: "⌘⇧C", icon: Link2, run: () => void copyLink(selected) },
+              ]
+            : []),
+        ]
+      : [];
     return [
+      ...itemCmds,
       go("today", "Today", Sunrise),
       go("ask", "Ask (chat with your data)", Sparkles),
       go("inbox", "Inbox", Inbox),
       go("prs", "Pull Requests", GitPullRequest),
-      go("slack", "Slack", MessageSquare),
+      ...(slackEnabled ? [go("slack", "Slack", MessageSquare)] : []),
       go("tickets", "Tickets", CircleDot),
       go("errors", "Errors", Flame),
       go("meetings", "Meetings", NotebookPen),
@@ -84,8 +119,21 @@ export function CommandPalette() {
         icon: MonitorSmartphone,
         run: () => setThemePref("system"),
       },
+      ...ACCENTS.map((a) => ({
+        id: `accent-${a.id}`,
+        label: `Accent: ${a.label}`,
+        icon: Palette,
+        run: () => setAccent(a.id),
+      })),
+      { id: "shortcuts", label: "Keyboard shortcuts", hint: "?", icon: Keyboard, run: () => setHelpOpen(true) },
+      {
+        id: "toggle-sentry",
+        label: showSentry ? "Hide Sentry errors in Inbox & Today" : "Show Sentry errors in Inbox & Today",
+        icon: Flame,
+        run: toggleSentry,
+      },
     ];
-  }, [setSection, setThemePref, sync, startOnboarding]);
+  }, [setSection, setThemePref, setAccent, sync, startOnboarding, selected, setHelpOpen, showSentry, toggleSentry, slackEnabled]);
 
   // Full-text search over everything ever received (incl. done/archived) —
   // debounced so typing doesn't hammer SQLite.
@@ -206,13 +254,13 @@ export function CommandPalette() {
                   onMouseEnter={() => setActive(i)}
                   onClick={() => runRow(r)}
                   className={cn(
-                    "flex w-full cursor-default items-center gap-2.5 rounded-xl px-3 py-2 text-[13px]",
+                    "flex w-full cursor-default items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] transition-colors duration-100",
                     i === active ? "bg-accent text-accent-fg" : "text-ink-2",
                   )}
                 >
                   <r.c.icon size={15} className="shrink-0" />
                   <span className="flex-1 text-left font-medium">{r.c.label}</span>
-                  {r.c.hint && <span className="text-xs opacity-60">{r.c.hint}</span>}
+                  {r.c.hint && <Kbd>{r.c.hint}</Kbd>}
                 </button>
               ) : (
                 <button

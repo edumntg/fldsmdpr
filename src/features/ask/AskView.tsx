@@ -15,10 +15,19 @@ const SUGGESTIONS = [
 /** Chat with claude over everything the app knows: notifications, tickets,
  * agent runs, sync state. Answers come from the local DB — no live fetching. */
 export function AskView() {
-  const { messages, running, error, send, clear } = useAsk();
+  const { messages, running, error, send, clear, prefill, setPrefill } = useAsk();
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // "Ask about this" lands here with a question pre-typed, ready to edit or send.
+  useEffect(() => {
+    if (prefill) {
+      setDraft(prefill);
+      setPrefill(null);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  }, [prefill, setPrefill]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });

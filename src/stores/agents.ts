@@ -16,7 +16,7 @@ export interface AgentRun {
   status: AgentStatus;
   label: string; // the action, e.g. "Review with agent"
   title: string; // what it's working on
-  source: string; // where the work came from (github/linear/slack/…)
+  source: string; // where the work came from (github/linear/sentry/…)
   detail?: string; // worktree name / last status / error
   startedAt: number;
   endedAt?: number;

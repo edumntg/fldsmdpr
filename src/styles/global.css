@@ -43,8 +43,34 @@
   --src-sentry: #d1305b;
 
   --shadow-card: 0 1px 2px rgba(16, 18, 27, 0.04), 0 4px 16px rgba(16, 18, 27, 0.05);
+  --shadow-card-hover: 0 2px 4px rgba(16, 18, 27, 0.05), 0 10px 28px rgba(16, 18, 27, 0.09);
   --shadow-pop: 0 8px 30px rgba(16, 18, 27, 0.16), 0 2px 8px rgba(16, 18, 27, 0.08);
+
+  /* motion */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --ease-spring: cubic-bezier(0.22, 1.2, 0.36, 1);
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --dur-slow: 260ms;
+
+  /* density (comfortable) */
+  --card-pad: 12px;
+  --card-gap: 6px;
+  --row-h: 34px;
 }
+
+[data-density="compact"] {
+  --card-pad: 8px 10px;
+  --card-gap: 3px;
+  --row-h: 30px;
+}
+
+/* ---------- Accent presets (light) ---------- */
+[data-accent="violet"] { --accent: #7c5cf0; --accent-hover: #6a4be0; --accent-soft: rgba(124, 92, 240, 0.12); }
+[data-accent="teal"]   { --accent: #0e9f9f; --accent-hover: #0b8a8a; --accent-soft: rgba(14, 159, 159, 0.12); }
+[data-accent="rose"]   { --accent: #e0457b; --accent-hover: #c93a6c; --accent-soft: rgba(224, 69, 123, 0.12); }
+[data-accent="amber"]  { --accent: #d98a06; --accent-hover: #bf7905; --accent-soft: rgba(217, 138, 6, 0.14); }
+[data-accent="green"]  { --accent: #1f9d55; --accent-hover: #1a884a; --accent-soft: rgba(31, 157, 85, 0.12); }
 
 [data-theme="dark"] {
   --canvas: #131316;
@@ -80,8 +106,16 @@
   --src-sentry: #f0567f;
 
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 16px rgba(0, 0, 0, 0.25);
+  --shadow-card-hover: 0 2px 4px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.4);
   --shadow-pop: 0 8px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.35);
 }
+
+/* ---------- Accent presets (dark: a touch brighter) ---------- */
+[data-theme="dark"][data-accent="violet"] { --accent: #9b82ff; --accent-hover: #ab96ff; --accent-soft: rgba(155, 130, 255, 0.16); }
+[data-theme="dark"][data-accent="teal"]   { --accent: #22c8c8; --accent-hover: #3dd6d6; --accent-soft: rgba(34, 200, 200, 0.16); }
+[data-theme="dark"][data-accent="rose"]   { --accent: #f0678f; --accent-hover: #f47ea1; --accent-soft: rgba(240, 103, 143, 0.16); }
+[data-theme="dark"][data-accent="amber"]  { --accent: #f5a623; --accent-hover: #f7b447; --accent-soft: rgba(245, 166, 35, 0.16); }
+[data-theme="dark"][data-accent="green"]  { --accent: #3ec776; --accent-hover: #56d089; --accent-soft: rgba(62, 199, 118, 0.16); }
 
 @theme inline {
   --color-canvas: var(--canvas);
@@ -118,7 +152,11 @@
   --radius-pill: 999px;
 
   --shadow-card: var(--shadow-card);
+  --shadow-card-hover: var(--shadow-card-hover);
   --shadow-pop: var(--shadow-pop);
+
+  --ease-out: var(--ease-out);
+  --ease-spring: var(--ease-spring);
 }
 
 /* ---------- Base ---------- */
@@ -128,12 +166,96 @@ body,
   height: 100%;
 }
 
+/* Inside Tauri the window is transparent so the macOS sidebar vibrancy shows
+   through; the browser preview paints the canvas itself. */
+html:not([data-tauri]) {
+  background: var(--canvas);
+}
+
 body {
-  @apply bg-canvas font-sans text-ink antialiased;
+  @apply font-sans text-ink antialiased;
+  background: transparent;
   font-size: 13.5px;
   overflow: hidden;
   user-select: none;
   cursor: default;
+}
+
+/* one-beat color crossfade when theme/accent flips (added by the theme store) */
+.theme-switching,
+.theme-switching * {
+  transition:
+    background-color 300ms var(--ease-out),
+    border-color 300ms var(--ease-out),
+    color 300ms var(--ease-out) !important;
+}
+
+/* frosted header that content scrolls beneath */
+.glass {
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  -webkit-backdrop-filter: saturate(160%) blur(18px);
+  backdrop-filter: saturate(160%) blur(18px);
+}
+.glass-2 {
+  background: color-mix(in srgb, var(--canvas) 72%, transparent);
+  -webkit-backdrop-filter: saturate(160%) blur(18px);
+  backdrop-filter: saturate(160%) blur(18px);
+}
+
+/* translucent sidebar over the native vibrancy layer */
+.vibrant {
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+}
+html:not([data-tauri]) .vibrant {
+  background: var(--surface);
+}
+
+/* press feedback for anything clickable */
+.press {
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur) var(--ease-out);
+}
+.press:active:not(:disabled) {
+  transform: scale(0.975);
+}
+
+/* skeleton shimmer */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--surface-3);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ink) 6%, transparent), transparent);
+  animation: shimmer 1.4s infinite;
+}
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* animated collapsible (grid-rows trick, no JS measuring) */
+.reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-slow) var(--ease-out);
+}
+.reveal[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+.reveal > * {
+  min-height: 0;
+  overflow: hidden;
 }
 
 ::selection {
@@ -284,7 +406,80 @@ body {
   }
 }
 .animate-pop-in {
-  animation: pop-in 150ms cubic-bezier(0.2, 0.8, 0.3, 1);
+  animation: pop-in var(--dur) var(--ease-out);
+}
+
+/* view switch: soft rise */
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-enter {
+  animation: enter var(--dur-slow) var(--ease-out) both;
+}
+
+/* list items: staggered rise, capped so long lists don't wait */
+.stagger > * {
+  animation: enter var(--dur-slow) var(--ease-out) both;
+  animation-delay: calc(min(var(--i, 0), 12) * 22ms);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-toast-in {
+  animation: toast-in var(--dur-slow) var(--ease-spring);
+}
+
+@keyframes badge-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.3);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.animate-badge-pop {
+  animation: badge-pop 320ms var(--ease-spring);
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--accent-soft);
+  }
+  50% {
+    box-shadow: 0 0 0 4px var(--accent-soft);
+  }
+}
+.animate-pulse-dot {
+  animation: pulse-dot 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @keyframes fade-in {

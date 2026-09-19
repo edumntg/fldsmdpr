@@ -19,7 +19,7 @@ const COPY: Record<AiSource, { name: string; blurb: string }> = {
 
 /**
  * Connection card for sources that flow through headless claude + MCP
- * (like Slack): a toggle instead of a token, since claude already holds
+ * a toggle instead of a token, since claude already holds
  * the connection.
  */
 export function AiSourceCard({ source }: { source: AiSource }) {

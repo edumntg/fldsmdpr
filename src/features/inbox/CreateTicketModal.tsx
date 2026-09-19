@@ -34,7 +34,7 @@ function defaultDescription(n: AppNotification): string {
     .join("\n");
 }
 
-/** Button + modal: turn a Sentry incident or Slack task into a Linear ticket
+/** Button + modal: turn a Sentry incident into a Linear ticket
  * (team/project/assignee/status/date/priority), optionally launching a fix
  * agent that carries both the original context and the new ticket. */
 export function CreateTicketButton({ n }: { n: AppNotification }) {

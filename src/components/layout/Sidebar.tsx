@@ -1,7 +1,7 @@
+import { useEffect, useRef, useState } from "react";
 import {
   Inbox,
   GitPullRequest,
-  MessageSquare,
   CircleDot,
   Calendar,
   Bot,
@@ -14,43 +14,70 @@ import {
   Flame,
   NotebookPen,
   Sparkles,
+  Loader2,
+  MessageSquare,
 } from "lucide-react";
 import type { SectionId } from "../../lib/types";
-import { useUi } from "../../stores/ui";
-import { useInbox, unreadCount } from "../../stores/inbox";
-import { useTerminal } from "../../stores/terminal";
+import { useUi, sectionOrder } from "../../stores/ui";
 import { useSlackAi } from "../../stores/slackAi";
+import { useInbox, unreadCounts } from "../../stores/inbox";
+import { useTerminal } from "../../stores/terminal";
 import { useAgents, isActive } from "../../stores/agents";
-import { Loader2 } from "lucide-react";
 import { cn, isMac, modKey } from "../../lib/utils";
 import { Kbd } from "../ui/Kbd";
 import { IconButton } from "../ui/IconButton";
 
-const NAV: { id: SectionId; label: string; icon: typeof Inbox }[] = [
-  { id: "today", label: "Today", icon: Sunrise },
-  { id: "ask", label: "Ask", icon: Sparkles },
-  { id: "inbox", label: "Inbox", icon: Inbox },
-  { id: "prs", label: "Pull Requests", icon: GitPullRequest },
-  { id: "slack", label: "Slack", icon: MessageSquare },
-  { id: "tickets", label: "Tickets", icon: CircleDot },
-  { id: "errors", label: "Errors", icon: Flame },
-  { id: "meetings", label: "Meetings", icon: NotebookPen },
-  { id: "calendar", label: "Calendar", icon: Calendar },
-  { id: "agents", label: "Agents", icon: Bot },
-];
+const ICONS: Record<SectionId, typeof Inbox> = {
+  today: Sunrise,
+  ask: Sparkles,
+  inbox: Inbox,
+  prs: GitPullRequest,
+  slack: MessageSquare,
+  tickets: CircleDot,
+  errors: Flame,
+  meetings: NotebookPen,
+  calendar: Calendar,
+  agents: Bot,
+  settings: Settings,
+};
+
+export const SECTION_LABELS: Record<SectionId, string> = {
+  today: "Today",
+  ask: "Ask",
+  inbox: "Inbox",
+  prs: "Pull Requests",
+  slack: "Slack",
+  tickets: "Tickets",
+  errors: "Errors",
+  meetings: "Meetings",
+  calendar: "Calendar",
+  agents: "Agents",
+  settings: "Settings",
+};
 
 export function Sidebar() {
-  const { section, setSection, sidebarCollapsed, toggleSidebar, setPaletteOpen } = useUi();
+  const section = useUi((s) => s.section);
+  const setSection = useUi((s) => s.setSection);
+  const sidebarCollapsed = useUi((s) => s.sidebarCollapsed);
+  const toggleSidebar = useUi((s) => s.toggleSidebar);
+  const setPaletteOpen = useUi((s) => s.setPaletteOpen);
   const items = useInbox((s) => s.items);
+  const showSentry = useUi((s) => s.showSentry);
   const toggleTerminal = useTerminal((s) => s.toggle);
-  const slackAnalyzing = useSlackAi((s) => s.running);
   const agentsWorking = useAgents((s) => Object.values(s.runs).some((r) => isActive(r.status)));
+  const slackEnabled = useSlackAi((s) => s.enabled);
+  const slackAnalyzing = useSlackAi((s) => s.running);
+  const counts = unreadCounts(items, showSentry);
+  const order = sectionOrder(slackEnabled);
+
+  // Sliding active pill: one absolutely-positioned indicator glides between rows.
+  const activeIdx = order.indexOf(section);
 
   return (
     <aside
       data-tauri-drag-region
       className={cn(
-        "flex h-full shrink-0 flex-col border-r border-line bg-surface transition-[width] duration-200",
+        "vibrant flex h-full shrink-0 flex-col border-r border-line transition-[width] duration-300 ease-[var(--ease-out)]",
         sidebarCollapsed ? "w-14" : "w-60",
       )}
     >
@@ -60,7 +87,7 @@ export function Sidebar() {
       <div className={cn("flex items-center gap-2 px-3 pb-3", sidebarCollapsed && "justify-center px-2")}>
         {!sidebarCollapsed && (
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <div className="flex size-6 shrink-0 items-center justify-center rounded-lg bg-accent text-[11px] font-bold text-accent-fg">
+            <div className="flex size-6 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-accent-hover text-[11px] font-bold text-accent-fg shadow-sm">
               F
             </div>
             <span className="truncate text-[13px] font-semibold tracking-tight">FLDSMDPR</span>
@@ -74,7 +101,7 @@ export function Sidebar() {
       {!sidebarCollapsed && (
         <button
           onClick={() => setPaletteOpen(true)}
-          className="mx-3 mb-4 flex h-8 cursor-default items-center gap-2 rounded-xl border border-line bg-surface-2 px-2.5 text-ink-3 transition-colors hover:border-line-strong"
+          className="press mx-3 mb-4 flex h-8 cursor-default items-center gap-2 rounded-xl border border-line bg-surface-2/80 px-2.5 text-ink-3 hover:border-line-strong hover:bg-surface-2"
         >
           <Search size={14} />
           <span className="flex-1 text-left text-xs">Search…</span>
@@ -85,42 +112,39 @@ export function Sidebar() {
         </button>
       )}
 
-      <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2">
-        {NAV.map(({ id, label, icon: Icon }) => {
+      <nav className="relative flex flex-1 flex-col gap-0.5 overflow-y-auto px-2">
+        {activeIdx >= 0 && (
+          <div
+            aria-hidden
+            style={{ transform: `translateY(calc(${activeIdx} * (var(--row-h) + 2px)))` }}
+            className="pointer-events-none absolute inset-x-2 top-0 h-[var(--row-h)] rounded-xl bg-accent shadow-sm transition-transform duration-300 ease-[var(--ease-spring)]"
+          />
+        )}
+        {order.map((id, i) => {
+          const Icon = ICONS[id];
           const active = section === id;
-          // Today/Ask are digest/chat views, not queues — no unread badge.
-          const unread = id === "today" || id === "ask" ? 0 : unreadCount(items, id);
+          const unread = counts[id] ?? 0;
           return (
             <button
               key={id}
               onClick={() => setSection(id)}
-              title={label}
+              title={`${SECTION_LABELS[id]} · ${modKey}${i + 1}`}
               className={cn(
-                "flex h-8.5 cursor-default items-center gap-2.5 rounded-xl px-2.5 text-[13px] font-medium transition-colors duration-150",
+                "press relative z-10 flex h-[var(--row-h)] shrink-0 cursor-default items-center gap-2.5 rounded-xl px-2.5 text-[13px] font-medium",
                 sidebarCollapsed && "justify-center px-0",
-                active
-                  ? "bg-accent text-accent-fg shadow-sm"
-                  : "text-ink-2 hover:bg-surface-3 hover:text-ink",
+                active ? "text-accent-fg" : "text-ink-2 hover:bg-surface-3/70 hover:text-ink",
               )}
             >
               <Icon size={16} strokeWidth={2} className="shrink-0" />
-              {!sidebarCollapsed && <span className="flex-1 truncate text-left">{label}</span>}
-              {((id === "slack" && slackAnalyzing) || (id === "agents" && agentsWorking)) && (
-                <Loader2
-                  size={13}
-                  className={cn("shrink-0 animate-spin", active ? "text-accent-fg" : "text-src-agent")}
-                />
+              {!sidebarCollapsed && <span className="flex-1 truncate text-left">{SECTION_LABELS[id]}</span>}
+              {((id === "agents" && agentsWorking) || (id === "slack" && slackAnalyzing)) && (
+                <Loader2 size={13} className={cn("shrink-0 animate-spin", active ? "text-accent-fg" : "text-src-agent")} />
               )}
-              {!sidebarCollapsed && unread > 0 && !(id === "slack" && slackAnalyzing) && (
-                <span
-                  className={cn(
-                    "rounded-pill px-1.5 py-px text-[10.5px] font-semibold tabular-nums",
-                    active ? "bg-white/20 text-accent-fg" : "bg-accent-soft text-accent",
-                  )}
-                >
-                  {unread}
-                </span>
-              )}
+              {unread > 0 && (sidebarCollapsed ? (
+                <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-accent ring-2 ring-surface" />
+              ) : (
+                <Badge value={unread} active={active} />
+              ))}
             </button>
           );
         })}
@@ -140,9 +164,35 @@ export function Sidebar() {
           collapsed={sidebarCollapsed}
           active={section === "settings"}
           onClick={() => setSection("settings")}
+          hint={`${modKey},`}
         />
       </div>
     </aside>
+  );
+}
+
+/** Unread count that pops when it changes. */
+function Badge({ value, active }: { value: number; active: boolean }) {
+  const [pop, setPop] = useState(false);
+  const prev = useRef(value);
+  useEffect(() => {
+    if (prev.current !== value) {
+      prev.current = value;
+      setPop(true);
+      const t = setTimeout(() => setPop(false), 350);
+      return () => clearTimeout(t);
+    }
+  }, [value]);
+  return (
+    <span
+      className={cn(
+        "rounded-pill px-1.5 py-px text-[10.5px] font-semibold tabular-nums",
+        active ? "bg-white/20 text-accent-fg" : "bg-accent-soft text-accent",
+        pop && "animate-badge-pop",
+      )}
+    >
+      {value}
+    </span>
   );
 }
 
@@ -166,14 +216,14 @@ function SidebarFooterItem({
       onClick={onClick}
       title={label}
       className={cn(
-        "flex h-8.5 cursor-default items-center gap-2.5 rounded-xl px-2.5 text-[13px] font-medium transition-colors",
+        "press flex h-[var(--row-h)] cursor-default items-center gap-2.5 rounded-xl px-2.5 text-[13px] font-medium",
         collapsed && "justify-center px-0",
-        active ? "bg-accent text-accent-fg shadow-sm" : "text-ink-2 hover:bg-surface-3 hover:text-ink",
+        active ? "bg-accent text-accent-fg shadow-sm" : "text-ink-2 hover:bg-surface-3/70 hover:text-ink",
       )}
     >
       <Icon size={16} className="shrink-0" />
       {!collapsed && <span className="flex-1 truncate text-left">{label}</span>}
-      {!collapsed && hint && <span className="text-[10px] text-ink-3">{hint}</span>}
+      {!collapsed && hint && <span className={cn("text-[10px]", active ? "text-accent-fg/70" : "text-ink-3")}>{hint}</span>}
     </button>
   );
 }
