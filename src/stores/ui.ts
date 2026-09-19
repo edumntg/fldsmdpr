@@ -29,7 +29,7 @@ interface UiState {
 }
 
 const SECTIONS: SectionId[] = [
-  "today", "ask", "inbox", "prs", "slack", "tickets", "errors", "meetings", "calendar", "agents", "settings",
+  "today", "ask", "flow", "inbox", "prs", "slack", "tickets", "errors", "meetings", "calendar", "agents", "settings",
 ];
 const savedSection = localStorage.getItem("ui:section") as SectionId | null;
 
@@ -80,7 +80,7 @@ export const useUi = create<UiState>((set) => ({
 
 /** Sidebar order (Slack only when its master switch is on). */
 const ALL_SECTIONS: SectionId[] = [
-  "today", "ask", "inbox", "prs", "slack", "tickets", "errors", "meetings", "calendar", "agents",
+  "today", "ask", "flow", "inbox", "prs", "slack", "tickets", "errors", "meetings", "calendar", "agents",
 ];
 export const sectionOrder = (slackEnabled: boolean): SectionId[] =>
   slackEnabled ? ALL_SECTIONS : ALL_SECTIONS.filter((s) => s !== "slack");

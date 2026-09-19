@@ -16,6 +16,7 @@ import {
   Sparkles,
   Loader2,
   MessageSquare,
+  Waypoints,
 } from "lucide-react";
 import type { SectionId } from "../../lib/types";
 import { useUi, sectionOrder } from "../../stores/ui";
@@ -30,6 +31,7 @@ import { IconButton } from "../ui/IconButton";
 const ICONS: Record<SectionId, typeof Inbox> = {
   today: Sunrise,
   ask: Sparkles,
+  flow: Waypoints,
   inbox: Inbox,
   prs: GitPullRequest,
   slack: MessageSquare,
@@ -44,6 +46,7 @@ const ICONS: Record<SectionId, typeof Inbox> = {
 export const SECTION_LABELS: Record<SectionId, string> = {
   today: "Today",
   ask: "Ask",
+  flow: "Flow",
   inbox: "Inbox",
   prs: "Pull Requests",
   slack: "Slack",

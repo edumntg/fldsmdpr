@@ -15,6 +15,9 @@ export const ACCENTS: { id: Accent; label: string; swatch: string }[] = [
 ];
 
 const ZOOM_STEPS = [0.85, 0.9, 1, 1.1, 1.2, 1.3];
+/** Flow-diagram animation speed multipliers. */
+export const FLOW_SPEEDS = [0.5, 1, 2] as const;
+export type FlowSpeed = (typeof FLOW_SPEEDS)[number];
 
 interface ThemeState {
   pref: ThemePref;
@@ -22,6 +25,8 @@ interface ThemeState {
   accent: Accent;
   density: Density;
   zoom: number;
+  flowSpeed: FlowSpeed;
+  setFlowSpeed: (s: FlowSpeed) => void;
   setPref: (pref: ThemePref) => void;
   setAccent: (a: Accent) => void;
   setDensity: (d: Density) => void;
@@ -80,6 +85,12 @@ export const useTheme = create<ThemeState>((set, get) => {
     accent: (localStorage.getItem("ui:accent") as Accent | null) ?? "blue",
     density: (localStorage.getItem("ui:density") as Density | null) ?? "comfortable",
     zoom: Number(localStorage.getItem("ui:zoom")) || 1,
+    flowSpeed: (Number(localStorage.getItem("ui:flowSpeed")) as FlowSpeed) || 1,
+    setFlowSpeed: (flowSpeed) => {
+      root.style.setProperty("--flow-speed", String(flowSpeed));
+      localStorage.setItem("ui:flowSpeed", String(flowSpeed));
+      set({ flowSpeed });
+    },
     setPref: (pref) => {
       const resolved = resolve(pref);
       withTransition(() => (root.dataset.theme = resolved));
@@ -102,9 +113,10 @@ export const useTheme = create<ThemeState>((set, get) => {
     zoomOut: () => step(-1),
     zoomReset: () => zoomTo(1),
     init: async () => {
-      const { accent, density, zoom } = get();
+      const { accent, density, zoom, flowSpeed } = get();
       root.dataset.accent = accent;
       root.dataset.density = density;
+      root.style.setProperty("--flow-speed", String(flowSpeed));
       applyZoom(zoom);
       const saved = (await kvGet("theme")) as ThemePref | null;
       const pref = saved ?? "system";
