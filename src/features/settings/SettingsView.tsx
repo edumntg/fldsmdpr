@@ -25,6 +25,7 @@ import { CalendarCard } from "../connections/CalendarCard";
 import { AiSourceCard } from "../connections/AiSourceCard";
 import { JevCard } from "../connections/JevCard";
 import { SlackCard } from "../connections/SlackCard";
+import { JevPlayground } from "./JevPlayground";
 import { Button } from "../../components/ui/Button";
 import { cn, relativeTime } from "../../lib/utils";
 
@@ -173,6 +174,7 @@ export function SettingsView() {
           <div>
             <h2 className="mb-2.5 px-1 text-[13px] font-semibold">Intelligence</h2>
             <JevCard />
+            <JevPlayground />
           </div>
 
           <div>
