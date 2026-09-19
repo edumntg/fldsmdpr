@@ -56,6 +56,7 @@ pub fn run() {
             jev::jev_set_enabled,
             jev::jev_run,
             jev::jev_agent_outcome,
+            jev::jev_judge_samples,
             slack::slack_connect,
             slack::slack_list_channels,
             slack::slack_resolve_channel,

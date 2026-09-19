@@ -526,6 +526,32 @@ export async function jevRun(): Promise<number> {
   return invoke<number>("jev_run");
 }
 
+export interface JevSample {
+  source: string;
+  title: string;
+  body: string;
+}
+
+export interface JevVerdict {
+  urgency: string;
+  confidence: number;
+  needs_action: number;
+  action: string;
+}
+
+/** Settings playground: judge a few canned items with the real triage questions. */
+export async function jevJudgeSamples(items: JevSample[]): Promise<JevVerdict[]> {
+  if (!inTauri) {
+    await new Promise((r) => setTimeout(r, 500));
+    return items.map((_, i) => [
+      { urgency: "urgent", confidence: 0.91, needs_action: 0.94, action: "fix_bug" },
+      { urgency: "today", confidence: 0.83, needs_action: 0.88, action: "review_code" },
+      { urgency: "fyi", confidence: 0.77, needs_action: 0.12, action: "none" },
+    ][i % 3]);
+  }
+  return invoke<JevVerdict[]>("jev_judge_samples", { items });
+}
+
 /** completed | needs_input | failed | in_progress, or null when Jev is off / unsure. */
 export async function jevAgentOutcome(text: string): Promise<string | null> {
   if (!inTauri) return null;

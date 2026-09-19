@@ -430,6 +430,64 @@ pub async fn run(db: &AppDb, key: &str) -> Result<usize, String> {
 
 // ---- commands ----
 
+#[derive(serde::Deserialize)]
+pub struct Sample {
+    pub source: String,
+    pub title: String,
+    pub body: String,
+}
+
+#[derive(Serialize)]
+pub struct Verdict {
+    pub urgency: String,
+    pub confidence: f64,
+    pub needs_action: f64,
+    pub action: String,
+}
+
+/// Settings playground: judge a few canned items with the real triage
+/// questions so the user can see what the triage does. Nothing is stored.
+#[tauri::command]
+pub async fn jev_judge_samples(
+    db: State<'_, AppDb>,
+    items: Vec<Sample>,
+) -> Result<Vec<Verdict>, String> {
+    let (key, about_me) = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        (
+            ready(&conn).ok_or("Jev isn't connected")?,
+            kv_get(&conn, "about_me").unwrap_or_default(),
+        )
+    };
+    let client = client()?;
+    let questions = triage_questions();
+    let mut out = Vec::with_capacity(items.len());
+    for it in items.iter().take(6) {
+        let row = Row {
+            id: String::new(),
+            source: it.source.clone(),
+            ntype: "sample".into(),
+            title: it.title.clone(),
+            snippet: it.body.clone(),
+            meta: json!({}),
+        };
+        let a = decide(
+            &client,
+            &key,
+            item_state(&row, &about_me),
+            questions.clone(),
+        )
+        .await?;
+        out.push(Verdict {
+            urgency: a["urgency"]["choice"].as_str().unwrap_or("fyi").to_string(),
+            confidence: a["urgency"]["confidence"].as_f64().unwrap_or(0.0),
+            needs_action: a["needs_action"]["noul"].as_f64().unwrap_or(0.0),
+            action: a["action"]["choice"].as_str().unwrap_or("none").to_string(),
+        });
+    }
+    Ok(out)
+}
+
 #[derive(Serialize)]
 pub struct JevStatus {
     pub connected: bool,
