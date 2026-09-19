@@ -45,6 +45,7 @@ import { Chip } from "../../components/ui/Chip";
 import { SourceBadge, sourceLabel } from "../../components/ui/SourceBadge";
 import { AgentRunButton } from "../agents/AgentRunButton";
 import { AgentStatusPanel } from "../agents/AgentStatusRow";
+import { AgentFlow } from "../agents/AgentFlow";
 import { useAgents } from "../../stores/agents";
 import { Collapsible } from "../../components/ui/Collapsible";
 import { Markdown } from "../../components/ui/Markdown";
@@ -149,6 +150,7 @@ export function NotificationDetail() {
 
           {n.source === "granola" && <GranolaSections n={n} />}
 
+          {agentRun && <AgentFlow run={agentRun} n={n} />}
           {agentRun && <AgentStatusPanel run={agentRun} />}
 
           <div className="mt-6 flex flex-wrap items-start gap-2 border-t border-line pt-4">
