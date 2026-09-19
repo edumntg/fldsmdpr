@@ -38,7 +38,7 @@ pub fn ai_source_status(db: State<AppDb>, source: String) -> Result<AiSourceStat
     valid_source(&source)?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     Ok(AiSourceStatus {
-        available: crate::connectors::slack::claude_bin().is_some(),
+        available: crate::claude_cli::claude_bin().is_some(),
         enabled: kv(&conn, &format!("{source}:ai_enabled")).as_deref() == Some("1"),
         last_sync_at: kv(&conn, &format!("{source}:ai_last_sync")).and_then(|s| s.parse().ok()),
         last_error: kv(&conn, &format!("{source}:ai_last_error")).filter(|s| !s.is_empty()),
@@ -86,7 +86,7 @@ pub async fn ai_source_sync(
             .map(|t| t - 30 * 60_000);
         (
             kv(&conn, &format!("{source}:ai_enabled")).as_deref() == Some("1"),
-            kv(&conn, "slack:about_me").unwrap_or_default(),
+            kv(&conn, "about_me").unwrap_or_default(),
             since,
         )
     };

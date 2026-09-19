@@ -18,6 +18,7 @@ export type NotificationType =
   | "event"
   | "incident"
   | "action_item"
+  | "follow_up"
   | "agent_done"
   | "agent_needs_input";
 

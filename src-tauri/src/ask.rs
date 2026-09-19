@@ -2,7 +2,7 @@
 //! context (recent notifications, agent runs, sync state). Pure Q&A over the
 //! local DB — no MCP tools, so rounds are fast (~10-30 s on Sonnet).
 
-use crate::connectors::slack::{result_envelope, run_claude_to_files};
+use crate::claude_cli::{result_envelope, run_claude_to_files};
 use crate::AppDb;
 use serde::Deserialize;
 use tauri::State;

@@ -115,7 +115,8 @@ export async function slackListChannels(): Promise<SlackChannel[]> {
 export interface SlackAiStatus {
   available: boolean;
   enabled: boolean;
-  about_me: string;
+  /** Day/week summaries via claude (slow, separately opt-in). */
+  summaries: boolean;
   last_sync_at: number | null;
   day_summary: string;
   week_summary: string;
@@ -125,8 +126,8 @@ export async function slackAiStatus(): Promise<SlackAiStatus> {
   if (!inTauri)
     return {
       available: true,
-      enabled: true, // browser preview: show the overview with sample data
-      about_me: "",
+      enabled: localStorage.getItem("mock-slack") === "1",
+      summaries: true,
       last_sync_at: Date.now() - 8 * 60_000,
       day_summary: JSON.stringify([
         { text: "The payout webhook started returning 500s after the 10am deploy; platform team asked for an owner.", channel: "#payments", actionable: true },
@@ -146,9 +147,17 @@ export async function slackAiCheck(): Promise<boolean> {
   return invoke<boolean>("slack_ai_check");
 }
 
-export async function slackSetAi(enabled: boolean, aboutMe: string): Promise<void> {
+export async function slackSetEnabled(enabled: boolean): Promise<void> {
+  if (!inTauri) {
+    localStorage.setItem("mock-slack", enabled ? "1" : "0");
+    return;
+  }
+  return invoke("slack_set_enabled", { enabled });
+}
+
+export async function slackSetSummaries(enabled: boolean): Promise<void> {
   if (!inTauri) return;
-  return invoke("slack_set_ai", { enabled, aboutMe });
+  return invoke("slack_set_summaries", { enabled });
 }
 
 export async function slackAiSync(): Promise<number> {
@@ -466,6 +475,63 @@ export async function morningBriefing(): Promise<void> {
   return invoke("morning_briefing");
 }
 
+// ---- Jev (TypeSafe decision model via OpenRouter) ----
+
+export interface JevStatus {
+  connected: boolean;
+  enabled: boolean;
+  last_run: number | null;
+  judged: number;
+}
+
+export async function jevStatus(): Promise<JevStatus> {
+  if (!inTauri) {
+    return {
+      connected: localStorage.getItem("mock-jev") === "1",
+      enabled: true,
+      last_run: Date.now() - 120_000,
+      judged: 7,
+    };
+  }
+  return invoke<JevStatus>("jev_status");
+}
+
+export async function jevConnect(key: string): Promise<void> {
+  if (!inTauri) {
+    if (!key.trim()) throw new Error("Paste your OpenRouter API key");
+    localStorage.setItem("mock-jev", "1");
+    return;
+  }
+  return invoke("jev_connect", { key });
+}
+
+export async function jevDisconnect(): Promise<void> {
+  if (!inTauri) {
+    localStorage.removeItem("mock-jev");
+    return;
+  }
+  return invoke("jev_disconnect");
+}
+
+export async function jevSetEnabled(enabled: boolean): Promise<void> {
+  if (!inTauri) return;
+  return invoke("jev_set_enabled", { enabled });
+}
+
+export async function jevRun(): Promise<number> {
+  if (!inTauri) {
+    await new Promise((r) => setTimeout(r, 600));
+    return 0;
+  }
+  return invoke<number>("jev_run");
+}
+
+/** completed | needs_input | failed | in_progress, or null when Jev is off / unsure. */
+export async function jevAgentOutcome(text: string): Promise<string | null> {
+  if (!inTauri) return null;
+  return invoke<string | null>("jev_agent_outcome", { text });
+}
+
 // ---- macOS Calendar ----
 
 export interface MacCalConfig {
@@ -538,6 +604,11 @@ export async function listNotifications(): Promise<AppNotification[] | null> {
 export async function setNotificationState(id: string, state: NotificationState): Promise<void> {
   if (!inTauri) return;
   return invoke("set_notification_state", { id, state });
+}
+
+export async function markReadMany(ids: string[]): Promise<void> {
+  if (!inTauri || ids.length === 0) return;
+  return invoke("mark_read_many", { ids });
 }
 
 export async function snoozeNotification(id: string, until: number): Promise<void> {

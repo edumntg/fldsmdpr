@@ -106,6 +106,19 @@ pub fn set_notification_state(db: State<AppDb>, id: String, state: String) -> Re
     Ok(())
 }
 
+/// Bulk "mark as read" for the ids currently visible in a list.
+#[tauri::command]
+pub fn mark_read_many(db: State<AppDb>, ids: Vec<String>) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare("UPDATE notifications SET state = 'read' WHERE id = ?1 AND state = 'unread'")
+        .map_err(|e| e.to_string())?;
+    for id in &ids {
+        stmt.execute([id]).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Full-text search across ALL notifications, including done/archived ones —
 /// nothing that ever reached the inbox is unfindable.
 #[tauri::command]
@@ -192,6 +205,8 @@ pub fn resolve_missing(
 
 /// Upserts fetched items; returns how many were new. Existing rows keep their
 /// read/done state — a sync must never resurrect what the user already triaged.
+/// Meta is merged (json_patch), so app-owned keys (pinned, linked_ticket,
+/// jev_*) survive; a Jev-judged priority also wins over the connector's base.
 pub fn upsert(conn: &rusqlite::Connection, items: &[Fetched]) -> Result<usize, String> {
     let mut new_count = 0usize;
     for item in items {
@@ -219,8 +234,10 @@ pub fn upsert(conn: &rusqlite::Connection, items: &[Fetched]) -> Result<usize, S
                 snippet = excluded.snippet,
                 url = excluded.url,
                 created_at = excluded.created_at,
-                priority = excluded.priority,
-                context_json = excluded.context_json,
+                priority = CASE
+                    WHEN json_extract(notifications.context_json, '$.jev_priority') IS NOT NULL
+                    THEN notifications.priority ELSE excluded.priority END,
+                context_json = json_patch(notifications.context_json, excluded.context_json),
                 relevance_kind = excluded.relevance_kind,
                 relevance_score = excluded.relevance_score,
                 relevance_reason = excluded.relevance_reason",
@@ -308,7 +325,7 @@ pub fn agent_notify(
 }
 
 /// Merges one key into a notification's meta (context_json) — used to link a
-/// created Linear ticket back to its source Sentry/Slack item.
+/// created Linear ticket back to its source Sentry item.
 #[tauri::command]
 pub fn notification_set_meta(
     db: State<AppDb>,

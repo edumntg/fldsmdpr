@@ -7,7 +7,7 @@ const MIGRATIONS: &[&str] = &[
     "
     CREATE TABLE notifications (
         id              TEXT PRIMARY KEY,
-        source          TEXT NOT NULL,             -- github | slack | linear | gcal | agent
+        source          TEXT NOT NULL,             -- github | linear | gcal | agent | sentry | notion | granola
         type            TEXT NOT NULL,             -- pr_review | mention | ai_inferred | ticket | event | agent_done | ...
         title           TEXT NOT NULL,
         snippet         TEXT NOT NULL DEFAULT '',
@@ -90,6 +90,14 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE agent_sessions ADD COLUMN source TEXT NOT NULL DEFAULT '';
     ALTER TABLE agent_sessions ADD COLUMN label TEXT NOT NULL DEFAULT '';
     ALTER TABLE agent_sessions ADD COLUMN detail TEXT;
+    ",
+    // v3 — Slack reset (it came back as opt-in under `slack:enabled`): drop old
+    // rows/config, keep the profile text (now shared by all AI rounds) under a
+    // neutral key.
+    "
+    INSERT OR IGNORE INTO kv(key, value) SELECT 'about_me', value FROM kv WHERE key = 'slack:about_me';
+    DELETE FROM notifications WHERE source = 'slack';
+    DELETE FROM kv WHERE key LIKE 'slack:%' OR key = 'account:slack' OR key = 'last_sync:slack';
     ",
 ];
 

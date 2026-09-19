@@ -1,11 +1,11 @@
 //! Generalized "analysis round via headless claude + an MCP connector".
 //!
-//! Same proven mechanics as the Slack round (direct spawn, stdin null, output
+//! Proven mechanics for headless claude (direct spawn, stdin null, output
 //! to files, Sonnet model, bounded time windows). Used for sources whose org
 //! blocks direct tokens (Notion) or that have no public token API (Granola).
 
-use super::slack::{extract_json_object, result_envelope, run_claude_to_files};
 use super::{Fetched, FetchedRelevance};
+use crate::claude_cli::{extract_json_object, result_envelope, run_claude_to_files};
 use serde_json::Value;
 use std::collections::HashMap;
 

@@ -11,7 +11,11 @@
         const dark =
           saved === "dark" ||
           ((!saved || saved === "system") && matchMedia("(prefers-color-scheme: dark)").matches);
-        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        const d = document.documentElement.dataset;
+        d.theme = dark ? "dark" : "light";
+        d.accent = localStorage.getItem("ui:accent") || "blue";
+        d.density = localStorage.getItem("ui:density") || "comfortable";
+        if ("__TAURI_INTERNALS__" in window) d.tauri = "1";
       } catch (_) {}
     </script>
   </head>

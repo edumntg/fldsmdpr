@@ -24,25 +24,22 @@ import { Button } from "../../components/ui/Button";
 import { Chip } from "../../components/ui/Chip";
 import { SourceBadge } from "../../components/ui/SourceBadge";
 import { ClaudeSlackSection } from "./ClaudeSlackSection";
-import { cn } from "../../lib/utils";
+import { useSlackAi } from "../../stores/slackAi";
+import { cn, openExternal } from "../../lib/utils";
 
 const meta = providerMeta("slack")!;
 
-async function openExternal(url: string) {
-  if ("__TAURI_INTERNALS__" in window) {
-    const { openUrl } = await import("@tauri-apps/plugin-opener");
-    await openUrl(url);
-  } else {
-    window.open(url, "_blank");
-  }
-}
-
 /**
- * Slack-specific connection: session-token auth (xoxc + xoxd) since the org
- * blocks creating Slack apps. Adds a channel opt-in picker once connected.
+ * Slack connection. Fast path first: session-token auth (xoxc + xoxd) reads
+ * the Web API directly in milliseconds — the org blocks Slack apps, and this
+ * needs none. Mentions/DMs are explicit; Jev (when connected) judges the rest
+ * and flags your own unanswered asks. Claude summaries are a slow, optional
+ * second section.
  */
 export function SlackConnectionCard({ defaultExpanded = false }: { defaultExpanded?: boolean }) {
   const { statuses, refresh, disconnect } = useConnections();
+  const slackEnabled = useSlackAi((s) => s.enabled);
+  const setSlackEnabled = useSlackAi((s) => s.setEnabled);
   const status = statuses.find((s) => s.id === "slack");
   const connected = status?.connected ?? false;
 
@@ -51,7 +48,7 @@ export function SlackConnectionCard({ defaultExpanded = false }: { defaultExpand
   const [xoxd, setXoxd] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showToken, setShowToken] = useState(false);
+  const [showToken, setShowToken] = useState(!connected);
 
   const onConnect = async () => {
     setBusy(true);
@@ -61,6 +58,7 @@ export function SlackConnectionCard({ defaultExpanded = false }: { defaultExpand
       setXoxc("");
       setXoxd("");
       await refresh();
+      if (!slackEnabled) await setSlackEnabled(true); // connecting implies "on"
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -97,19 +95,28 @@ export function SlackConnectionCard({ defaultExpanded = false }: { defaultExpand
 
       {expanded && (
         <div className="animate-fade-in border-t border-line px-4 pt-3.5 pb-4">
-          <ClaudeSlackSection />
-
-          <div className="mt-4 border-t border-line pt-3">
-            <button
-              onClick={() => setShowToken((s) => !s)}
-              className="inline-flex cursor-default items-center gap-1.5 text-xs font-medium text-ink-3 hover:text-ink"
-            >
-              <ChevronDown size={12} className={cn("transition-transform", showToken && "rotate-180")} />
-              Advanced: session token (xoxc / xoxd)
-            </button>
+          <div className="flex items-center gap-2">
+            <h4 className="text-[13px] font-semibold">Fast path: your browser session</h4>
+            <span className="rounded-pill bg-src-agent/12 px-1.5 py-0.5 text-[10px] font-medium text-src-agent">
+              Recommended · seconds
+            </span>
+            {connected && (
+              <button
+                onClick={() => setShowToken((s) => !s)}
+                className="ml-auto inline-flex cursor-default items-center gap-1.5 text-xs font-medium text-ink-3 hover:text-ink"
+              >
+                <ChevronDown size={12} className={cn("transition-transform", showToken && "rotate-180")} />
+                {showToken ? "Hide" : "Channels & token"}
+              </button>
+            )}
           </div>
+          <p className="mt-1.5 text-[13px] leading-5 text-ink-2">
+            Reads your DMs and the channels you pick straight from Slack's Web API on every sync — no
+            Slack app, no admin approval. @-mentions and DMs always land in the inbox; with AI triage
+            connected, Jev also flags messages relevant to you and your own asks still waiting for a reply.
+          </p>
 
-          {showToken && (
+          {(showToken || !connected) && (
             <div className="mt-3">
           {!connected ? (
             <>
@@ -199,11 +206,15 @@ export function SlackConnectionCard({ defaultExpanded = false }: { defaultExpand
             )}
             <p className="ml-auto max-w-80 text-right text-[11px] text-ink-3">
               Session tokens are read-only and stored only in your OS keychain. The xoxc token rotates
-              periodically — re-paste it if Slack sync starts failing.
+              periodically — re-paste it if Slack sync starts failing. DMs are included automatically.
             </p>
           </div>
             </div>
           )}
+
+          <div className="mt-4 border-t border-line pt-3.5">
+            <ClaudeSlackSection />
+          </div>
         </div>
       )}
     </div>

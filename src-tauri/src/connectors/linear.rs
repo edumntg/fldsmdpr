@@ -197,7 +197,7 @@ pub async fn fetch(token: &str) -> Result<Vec<Fetched>, String> {
     Ok(out)
 }
 
-// ---- Ticket creation (from Sentry incidents / Slack tasks) ----
+// ---- Ticket creation (from Sentry incidents) ----
 
 const META_QUERY: &str = "
 {

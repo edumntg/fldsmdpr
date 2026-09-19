@@ -29,7 +29,7 @@ const empty = (): SourceState => ({
   lastError: null,
 });
 
-// Like Slack-via-claude, these rounds are heavy agentic reads — sync on open
+// These rounds are heavy agentic reads — sync on open
 // plus roughly hourly while the app stays focused.
 const INTERVAL_MS = 60 * 60_000;
 let armed = false;

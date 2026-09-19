@@ -7,6 +7,8 @@ import type { TermTab } from "../../stores/terminal";
 import { ptySpawn, ptyWrite, ptyResize, ptyKill, onPtyOutput, ptyHookStatus } from "../../lib/pty";
 import { useTheme } from "../../stores/theme";
 import { useAgents, isLive, type AgentStatus } from "../../stores/agents";
+import { jevAgentOutcome } from "../../lib/ipc";
+import { jevActive } from "../../stores/jev";
 
 const themes = {
   dark: {
@@ -46,6 +48,16 @@ const HOOK_STATUS: Record<string, { status: AgentStatus; detail?: string }> = {
   waiting: { status: "waiting", detail: "Waiting for you — check the terminal" },
   needs_input: { status: "waiting", detail: "Needs your input (permission or question)" },
 };
+
+/** Jev's read of the terminal tail → run status (only when it's confident). */
+const JEV_OUTCOME: Record<string, { status: AgentStatus; detail: string }> = {
+  completed: { status: "done", detail: "Task looks complete (AI)" },
+  needs_input: { status: "waiting", detail: "Needs your input (AI)" },
+  failed: { status: "failed", detail: "Run looks failed (AI)" },
+};
+
+// eslint-disable-next-line no-control-regex
+const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][0-9A-Za-z]|[\x00-\x08\x0b-\x1f]/g;
 
 /**
  * One xterm.js instance bound to a PTY session. Stays mounted (hidden via
@@ -119,9 +131,17 @@ export function XtermView({ tab, active }: { tab: TermTab; active: boolean }) {
         return;
       }
       ptyIdRef.current = id;
+      // Rolling plain-text tail of the session for Jev's outcome verdict.
+      const decoder = new TextDecoder();
+      let tail = "";
       unsub = await onPtyOutput(
         id,
-        (bytes) => term.write(bytes),
+        (bytes) => {
+          term.write(bytes);
+          if (tab.kind === "claude" && tab.notificationId) {
+            tail = (tail + decoder.decode(bytes, { stream: true })).replace(ANSI, "").slice(-6000);
+          }
+        },
         () => {
           term.write("\r\n\x1b[90m[process exited]\x1b[0m\r\n");
           // Mark the linked agent run finished when a claude session ends.
@@ -143,6 +163,18 @@ export function XtermView({ tab, active }: { tab: TermTab; active: boolean }) {
           if (tab.runId && run.id !== tab.runId) return;
           if (run.status !== next.status || (next.detail && run.detail !== next.detail)) {
             setStatus(tab.notificationId!, next.status, next.detail);
+            // Claude just paused: ask Jev whether it finished, stalled, or failed.
+            if (ev === "waiting" && jevActive()) {
+              const snapshot = tail;
+              void jevAgentOutcome(snapshot)
+                .then((o) => {
+                  const verdict = o ? JEV_OUTCOME[o] : undefined;
+                  const cur = useAgents.getState().runs[tab.notificationId!];
+                  if (!verdict || !cur || cur.status !== "waiting" || (tab.runId && cur.id !== tab.runId)) return;
+                  useAgents.getState().setStatus(tab.notificationId!, verdict.status, verdict.detail);
+                })
+                .catch(() => {});
+            }
           }
         }, 2000);
       }

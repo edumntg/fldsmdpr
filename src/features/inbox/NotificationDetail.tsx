@@ -14,12 +14,18 @@ import {
   UserRoundPlus,
   TerminalSquare,
   CircleDot,
+  Pin,
+  Link2,
+  MessageCircleQuestion,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useInbox } from "../../stores/inbox";
+import { useInbox, isPinned } from "../../stores/inbox";
 import { useUi } from "../../stores/ui";
 import { useSync } from "../../stores/sync";
 import { useTerminal } from "../../stores/terminal";
+import { markDone, togglePin, snooze as snoozeItem, copyLink, askAbout, defaultAction, JEV_URGENCY_LABEL, SNOOZE_OPTIONS } from "../../lib/actions";
+import { IconButton } from "../../components/ui/IconButton";
+import { Skeleton } from "../../components/ui/Skeleton";
 import {
   linearMeta,
   linearUpdateIssue,
@@ -27,14 +33,13 @@ import {
   type LinearTeamMeta,
 } from "../../lib/ipc";
 import {
-  snoozeNotification,
   githubPrDetail,
   githubPrReview,
   githubPrMerge,
   type PrDetail,
 } from "../../lib/ipc";
 import type { AppNotification } from "../../lib/types";
-import { relativeTime } from "../../lib/utils";
+import { relativeTime, openExternal as open, useTick, cn } from "../../lib/utils";
 import { Button } from "../../components/ui/Button";
 import { Chip } from "../../components/ui/Chip";
 import { SourceBadge, sourceLabel } from "../../components/ui/SourceBadge";
@@ -47,35 +52,22 @@ import { SentrySections } from "./SentrySections";
 import { GranolaSections } from "./GranolaSections";
 import { CreateTicketButton } from "./CreateTicketModal";
 import { LinearStateChip } from "../../components/ui/LinearStateChip";
+import { SlackPills } from "../../components/ui/SlackPills";
 
-/** Agent actions offered per notification type (wired to real sessions in Phase 4). */
+/** Agent actions offered for an item (Jev's judgment when available). */
 function agentActions(n: AppNotification): { label: string; icon: typeof Bot }[] {
-  switch (n.type) {
-    case "pr_review":
-      return [{ label: "Review with agent", icon: Bot }];
-    case "pr_update":
-      return [{ label: "Fix with agent", icon: Wrench }];
-    case "mention":
-    case "ai_inferred":
-      return [{ label: "Draft reply", icon: MessageSquareReply }];
-    case "ticket":
-    case "assigned":
-    case "action_item":
-      return [{ label: "Run agent on this task", icon: Bot }];
-    case "incident":
-      return [{ label: "Fix with agent", icon: Wrench }];
-    default:
-      return [];
-  }
+  const label = defaultAction(n);
+  if (!label) return [];
+  const icon = /fix|investigate/i.test(label) ? Wrench : /reply/i.test(label) ? MessageSquareReply : Bot;
+  return [{ label, icon }];
 }
 
 export function NotificationDetail() {
   const selectedId = useUi((s) => s.selectedId);
   const items = useInbox((s) => s.items);
-  const setState = useInbox((s) => s.setState);
-  const select = useUi((s) => s.select);
   const n = items.find((i) => i.id === selectedId);
   const agentRun = useAgents((s) => (n ? s.runs[n.id] : undefined));
+  useTick();
 
   if (!n) return <Placeholder />;
 
@@ -88,21 +80,40 @@ export function NotificationDetail() {
         <span className="text-[13px] text-ink-3">{sourceLabel(n.source)}</span>
         <span className="text-ink-3">›</span>
         <span className="truncate text-[13px] font-medium">{n.meta?.number ?? n.meta?.key ?? n.meta?.channel ?? "Detail"}</span>
+        <div className="ml-auto flex items-center gap-0.5">
+          <IconButton
+            label={isPinned(n) ? "Unpin (p)" : "Pin to top (p)"}
+            onClick={() => togglePin(n)}
+            className={cn(isPinned(n) && "text-accent")}
+          >
+            <Pin size={15} className={cn(isPinned(n) && "fill-current")} />
+          </IconButton>
+          {n.url && (
+            <IconButton label="Copy link (⌘⇧C)" onClick={() => void copyLink(n)}>
+              <Link2 size={15} />
+            </IconButton>
+          )}
+          <IconButton label="Ask Claude about this (a)" onClick={() => askAbout(n)}>
+            <MessageCircleQuestion size={15} />
+          </IconButton>
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto p-5 pt-1">
-        <div className="animate-pop-in mx-auto max-w-2xl rounded-card border border-line bg-surface-2 p-6 shadow-card">
+        <div key={n.id} className="animate-enter mx-auto max-w-2xl rounded-card border border-line bg-surface-2 p-6 shadow-card">
           <div className="flex items-start gap-3">
             <SourceBadge source={n.source} n={n} />
             <div className="min-w-0 flex-1">
               <h2 className="text-[17px] leading-6 font-semibold tracking-tight">{n.title}</h2>
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-ink-3">
                 <span>{relativeTime(n.createdAt)}</span>
-                {n.meta?.from && <span>· from {n.meta.from}</span>}
+                {n.meta?.from && n.source !== "slack" && <span>· from {n.meta.from}</span>}
+                {n.meta?.channel && <span>· {n.meta.channel}</span>}
                 {n.meta?.repo && <span>· {n.meta.repo}</span>}
                 {n.meta?.cycle && <span>· {n.meta.cycle}</span>}
                 {n.meta?.team && <span>· {n.meta.team}</span>}
                 {n.source === "linear" && <LinearStateChip n={n} />}
+                <SlackPills n={n} />
                 {n.meta?.linked_ticket && (
                   <button
                     onClick={() => void open(n.meta?.linked_ticket_url)}
@@ -125,6 +136,8 @@ export function NotificationDetail() {
               </div>
             </div>
           )}
+
+          <JevTriage n={n} />
 
           <Markdown className="mt-4">{n.snippet}</Markdown>
 
@@ -154,14 +167,8 @@ export function NotificationDetail() {
               </Button>
             )}
             <div className="ml-auto flex gap-2">
-              <SnoozeButton n={n} onSnoozed={() => select(null)} />
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setState(n.id, "done");
-                  select(null);
-                }}
-              >
+              <SnoozeButton n={n} />
+              <Button variant="ghost" title="e" onClick={() => markDone(n)}>
                 <Check size={14} />
                 Done
               </Button>
@@ -173,46 +180,83 @@ export function NotificationDetail() {
   );
 }
 
-function SnoozeButton({ n, onSnoozed }: { n: AppNotification; onSnoozed: () => void }) {
+function SnoozeButton({ n }: { n: AppNotification }) {
   const [open, setOpen] = useState(false);
-  const reload = useInbox((s) => s.reload);
-
-  const snooze = async (until: number) => {
-    setOpen(false);
-    await snoozeNotification(n.id, until);
-    await reload();
-    onSnoozed();
-  };
-
-  const tomorrow9 = () => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    d.setHours(9, 0, 0, 0);
-    return d.getTime();
-  };
-
   return (
     <div className="relative">
-      <Button variant="ghost" onClick={() => setOpen((o) => !o)}>
+      <Button variant="ghost" title="s" onClick={() => setOpen((o) => !o)}>
         <Clock size={14} />
         Snooze
       </Button>
       {open && (
         <div className="animate-pop-in absolute right-0 bottom-full z-30 mb-1.5 w-44 overflow-hidden rounded-xl border border-line-strong bg-surface-2 p-1 shadow-pop">
-          {[
-            { label: "In 1 hour", until: () => Date.now() + 3600_000 },
-            { label: "In 4 hours", until: () => Date.now() + 4 * 3600_000 },
-            { label: "Tomorrow 9 AM", until: tomorrow9 },
-          ].map((o) => (
+          {SNOOZE_OPTIONS.map((o) => (
             <button
               key={o.label}
-              onClick={() => void snooze(o.until())}
+              onClick={() => {
+                setOpen(false);
+                void snoozeItem(n, o.until(), o.label);
+              }}
               className="flex w-full cursor-default items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-ink-2 hover:bg-surface-3"
             >
               <Clock size={12} className="shrink-0 text-ink-3" />
               {o.label}
             </button>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Jev's verdict on the item (urgency, suggested agent action, confidence) plus
+ * the PRs/tickets it judged related to a Sentry error. */
+function JevTriage({ n }: { n: AppNotification }) {
+  const items = useInbox((s) => s.items);
+  const select = useUi((s) => s.select);
+  const m = n.meta ?? {};
+  let related: { id: string; title: string; p: string }[] = [];
+  try {
+    related = m.jev_related ? JSON.parse(m.jev_related) : [];
+  } catch {
+    related = [];
+  }
+  if (!m.jev_urgency && related.length === 0) return null;
+  const conf = Math.round(Number(m.jev_confidence ?? 0) * 100);
+  const needs = Math.round(Number(m.jev_needs_action ?? 0) * 100);
+  return (
+    <div className="mt-4 rounded-xl bg-src-agent/8 p-3 text-[13px]">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <Sparkles size={14} className="shrink-0 text-src-agent" />
+        <span className="font-medium text-src-agent">AI triage</span>
+        {m.jev_urgency && (
+          <Chip tone={m.jev_urgency === "urgent" ? "danger" : m.jev_urgency === "today" ? "warning" : "neutral"}>
+            {JEV_URGENCY_LABEL[m.jev_urgency] ?? m.jev_urgency}
+          </Chip>
+        )}
+        {m.jev_action && m.jev_action !== "none" && <Chip tone="ai">{defaultAction(n)}</Chip>}
+        <span className="ml-auto text-[11px] text-ink-3 tabular-nums">
+          needs you {needs}% · confidence {conf}%
+        </span>
+      </div>
+      {related.length > 0 && (
+        <div className="mt-2.5 flex flex-col gap-1">
+          <p className="text-[11px] font-semibold tracking-wide text-ink-3 uppercase">Likely related</p>
+          {related.map((r) => {
+            const target = items.find((i) => i.id === r.id);
+            return (
+              <button
+                key={r.id}
+                onClick={() => target && select(target.id)}
+                disabled={!target}
+                className="press flex w-full cursor-default items-center gap-2 rounded-lg bg-surface-2/70 px-2.5 py-1.5 text-left hover:bg-surface-2 disabled:opacity-60"
+              >
+                {target && <SourceBadge source={target.source} size={12} n={target} />}
+                <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{r.title}</span>
+                <span className="shrink-0 text-[11px] text-ink-3 tabular-nums">{Math.round(Number(r.p) * 100)}%</span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -242,7 +286,14 @@ function PrSections({ n }: { n: AppNotification }) {
 
   if (!repo || !number) return null;
   if (error) return <p className="mt-3 text-xs text-ink-3">Couldn't load PR details: {error}</p>;
-  if (!detail) return <p className="mt-3 text-xs text-ink-3">Loading PR details…</p>;
+  if (!detail)
+    return (
+      <div className="mt-4 flex flex-col gap-2.5">
+        <Skeleton className="w-2/3" />
+        <Skeleton className="h-9 w-full rounded-xl" />
+        <Skeleton className="h-9 w-full rounded-xl" />
+      </div>
+    );
 
   return (
     <div className="mt-4 flex flex-col gap-2">
@@ -658,16 +709,6 @@ function LinearSections({ n }: { n: AppNotification }) {
   );
 }
 
-async function open(url?: string) {
-  if (!url) return;
-  if ("__TAURI_INTERNALS__" in window) {
-    const { openUrl } = await import("@tauri-apps/plugin-opener");
-    await openUrl(url);
-  } else {
-    window.open(url, "_blank");
-  }
-}
-
 function Placeholder() {
   return (
     <section className="flex h-full min-w-0 flex-1 flex-col">
@@ -676,7 +717,7 @@ function Placeholder() {
         <MousePointerClick size={26} strokeWidth={1.5} />
         <p className="text-[13px] font-medium">Select a notification</p>
         <p className="flex items-center gap-1 text-xs">
-          Navigate with <Chip>j</Chip> <Chip>k</Chip> — actions appear here
+          Navigate with <Chip>j</Chip> <Chip>k</Chip> — press <Chip>?</Chip> for all shortcuts
         </p>
       </div>
     </section>

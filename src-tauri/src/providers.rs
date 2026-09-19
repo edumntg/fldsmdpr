@@ -148,31 +148,23 @@ async fn validate(provider: &str, token: &str) -> Result<String, String> {
                 .ok_or_else(|| "Linear rejected the key".to_string())
         }
         "slack" => {
-            let res = client
-                .post("https://slack.com/api/auth.test")
-                .bearer_auth(token)
-                .send()
-                .await
-                .map_err(net_err)?;
-            let body: serde_json::Value = res.json().await.map_err(net_err)?;
-            if body["ok"].as_bool() != Some(true) {
-                return Err(format!(
-                    "Slack rejected the token ({})",
-                    body["error"].as_str().unwrap_or("unknown error")
-                ));
-            }
-            let user = body["user"].as_str().unwrap_or("connected");
-            let team = body["team"].as_str().unwrap_or("");
-            Ok(if team.is_empty() {
-                user.to_string()
-            } else {
-                format!("{user} @ {team}")
+            crate::connectors::slack::validate(&crate::connectors::slack::SlackAuth {
+                token: token.to_string(),
+                cookie: None,
             })
+            .await
         }
         "gcal" => crate::connectors::gcal::validate(token).await,
         "sentry" => crate::connectors::sentry::validate(token).await,
         other => Err(format!("Unknown provider: {other}")),
     }
+}
+
+fn now_secs() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0)
 }
 
 fn net_err(e: reqwest::Error) -> String {
@@ -291,9 +283,7 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
 
     // Sources safe to auto-resolve this round. A source only qualifies when its
     // fetch was BOTH successful and complete — resolving from a partial view
-    // permanently marks still-open items done. Slack never qualifies: its items
-    // are point-in-time messages that don't "close", and its two auth paths use
-    // different id schemes that would wipe each other.
+    // permanently marks still-open items done.
     let mut resolve_sources: Vec<&'static str> = Vec::new();
 
     if let Ok(Some(token)) = crate::secrets::get(&token_key("github")) {
@@ -330,23 +320,53 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
             Err(e) => errors.push(format!("sentry: {e}")),
         }
     }
-    if let Ok(Some(auth)) = crate::slack::load_auth() {
-        // Read opted-in channels under a short lock so the guard is dropped
-        // before we await the network fetch.
-        let channels: Vec<(String, String)> = {
+    // Slack fast path (session token, milliseconds): opted-in channels + DMs,
+    // explicit mentions always, implicit relevance and unanswered asks judged
+    // by Jev when configured. Never auto-resolved: messages are point-in-time.
+    {
+        let (enabled, channels, since, jev_key, about_me) = {
             let conn = db.0.lock().map_err(|e| e.to_string())?;
-            crate::slack::opted_in_channels(&conn)
-                .into_iter()
-                .map(|c| (c.id, c.name))
-                .collect()
-        };
-        if !channels.is_empty() {
-            match crate::connectors::slack::fetch(&auth, &channels).await {
-                Ok(items) => {
-                    fetched.extend(items);
-                    synced.push("slack".into());
+            let enabled = crate::slack::is_enabled(&conn);
+            let since = {
+                let last = crate::slack::last_ts(&conn);
+                let day_ago = (now_secs() - 86_400.0).max(0.0);
+                // 10 min overlap; a first run reads the last 24 h.
+                if last > 0.0 {
+                    (last - 600.0).max(day_ago)
+                } else {
+                    day_ago
                 }
-                Err(e) => errors.push(format!("slack: {e}")),
+            };
+            (
+                enabled,
+                crate::slack::opted_in_channels(&conn)
+                    .into_iter()
+                    .map(|c| (c.id, c.name))
+                    .collect::<Vec<_>>(),
+                since,
+                crate::jev::ready(&conn),
+                kv_get(&conn, "about_me").unwrap_or_default(),
+            )
+        };
+        if enabled {
+            if let Ok(Some(auth)) = crate::slack::load_auth() {
+                match crate::connectors::slack::fetch(
+                    &auth,
+                    &channels,
+                    since,
+                    jev_key.as_deref(),
+                    &about_me,
+                )
+                .await
+                {
+                    Ok((items, newest)) => {
+                        fetched.extend(items);
+                        synced.push("slack".into());
+                        let conn = db.0.lock().map_err(|e| e.to_string())?;
+                        crate::slack::set_last_ts(&conn, newest);
+                    }
+                    Err(e) => errors.push(format!("slack: {e}")),
+                }
             }
         }
     }
@@ -414,6 +434,18 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
         }
         new_count
     };
+
+    // AI triage: judge new/changed items and link Sentry errors to PRs/tickets.
+    // Runs only with an OpenRouter key configured; a failure never breaks the sync.
+    let jev_key = {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        crate::jev::ready(&conn)
+    };
+    if let Some(key) = jev_key {
+        if let Err(e) = crate::jev::run(&db, &key).await {
+            errors.push(format!("jev: {e}"));
+        }
+    }
 
     if new_count > 0 {
         use tauri_plugin_notification::NotificationExt;

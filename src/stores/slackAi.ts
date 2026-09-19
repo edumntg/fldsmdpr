@@ -1,11 +1,15 @@
 import { create } from "zustand";
-import { slackAiStatus, slackAiSync, slackSetAi } from "../lib/ipc";
+import { slackAiStatus, slackAiSync, slackSetEnabled, slackSetSummaries } from "../lib/ipc";
 import { useInbox } from "./inbox";
+import { useUi } from "./ui";
 
 interface SlackAiState {
+  /** claude CLI found (the analysis path needs it). */
   available: boolean;
+  /** Master switch (Settings → Slack). Off hides the section and stops all Slack work. */
   enabled: boolean;
-  aboutMe: string;
+  /** Day/week summaries via claude rounds (minutes each) — off by default. */
+  summaries: boolean;
   running: boolean;
   lastSyncAt: number | null;
   lastError: string | null;
@@ -14,7 +18,8 @@ interface SlackAiState {
   loaded: boolean;
   init: () => Promise<void>;
   sync: () => Promise<void>;
-  setConfig: (enabled: boolean, aboutMe: string) => Promise<void>;
+  setEnabled: (enabled: boolean) => Promise<void>;
+  setSummaries: (enabled: boolean) => Promise<void>;
 }
 
 // Slack-via-claude rounds are heavy (2-6 min of agentic Slack reading), so
@@ -27,7 +32,7 @@ let armed = false;
 export const useSlackAi = create<SlackAiState>((set, get) => ({
   available: false,
   enabled: false,
-  aboutMe: "",
+  summaries: false,
   running: false,
   lastSyncAt: null,
   lastError: null,
@@ -40,7 +45,7 @@ export const useSlackAi = create<SlackAiState>((set, get) => ({
     set({
       available: s.available,
       enabled: s.enabled,
-      aboutMe: s.about_me,
+      summaries: s.summaries,
       lastSyncAt: s.last_sync_at,
       daySummary: s.day_summary,
       weekSummary: s.week_summary,
@@ -53,7 +58,7 @@ export const useSlackAi = create<SlackAiState>((set, get) => ({
       // once the last run is over an hour old (incl. right after opening).
       const tick = () => {
         const st = get();
-        if (!st.enabled || st.running) return;
+        if (!st.enabled || !st.summaries || !st.available || st.running) return;
         const now = new Date();
         const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
         const stale = !st.lastSyncAt || Date.now() - st.lastSyncAt >= INTERVAL_MS;
@@ -65,7 +70,7 @@ export const useSlackAi = create<SlackAiState>((set, get) => ({
   },
 
   sync: async () => {
-    if (get().running || !get().enabled) return;
+    if (get().running || !get().enabled || !get().summaries) return;
     set({ running: true, lastError: null });
     try {
       await slackAiSync();
@@ -84,9 +89,18 @@ export const useSlackAi = create<SlackAiState>((set, get) => ({
     }
   },
 
-  setConfig: async (enabled, aboutMe) => {
-    await slackSetAi(enabled, aboutMe);
-    set({ enabled, aboutMe });
-    if (enabled && !get().lastSyncAt) void get().sync();
+  setEnabled: async (enabled) => {
+    await slackSetEnabled(enabled);
+    set({ enabled });
+    if (enabled && get().summaries && !get().lastSyncAt) void get().sync();
+    // Leaving the Slack section open with Slack off would show an empty shell.
+    if (!enabled && useUi.getState().section === "slack") useUi.getState().setSection("inbox");
+  },
+
+  setSummaries: async (summaries) => {
+    await slackSetSummaries(summaries);
+    set({ summaries });
+    if (summaries && !get().enabled) await get().setEnabled(true);
+    if (summaries && !get().lastSyncAt) void get().sync();
   },
 }));

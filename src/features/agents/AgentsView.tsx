@@ -114,7 +114,7 @@ export function AgentsView() {
             <div className="flex flex-col items-center gap-2 py-16 text-ink-3">
               <Bot size={26} strokeWidth={1.5} />
               <p className="text-[13px] font-medium">No agent work yet</p>
-              <p className="text-xs">Launch one from any PR, ticket, or Slack item.</p>
+              <p className="text-xs">Launch one from any PR, ticket, or error.</p>
             </div>
           )}
 

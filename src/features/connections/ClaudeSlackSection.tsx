@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Sparkles, Loader2, Check, X, RefreshCw, PlugZap } from "lucide-react";
 import { useSlackAi } from "../../stores/slackAi";
 import { slackAiCheck } from "../../lib/ipc";
@@ -8,18 +8,12 @@ import { relativeTime, cn } from "../../lib/utils";
 /**
  * Primary Slack path: the headless `claude` CLI + official Slack MCP fetches
  * mentions AND judges relevance. No Slack app or token — works with org locks.
+ * The "about you" profile it uses lives in Settings → About you.
  */
 export function ClaudeSlackSection() {
-  const { available, enabled, aboutMe, running, lastSyncAt, lastError, loaded, init, sync, setConfig } =
-    useSlackAi();
-  const [draft, setDraft] = useState(aboutMe);
+  const { available, enabled, summaries, running, lastSyncAt, lastError, sync, setSummaries } = useSlackAi();
   const [checking, setChecking] = useState(false);
   const [checkResult, setCheckResult] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    if (!loaded) void init();
-  }, [loaded, init]);
-  useEffect(() => setDraft(aboutMe), [aboutMe]);
 
   const check = async () => {
     setChecking(true);
@@ -35,15 +29,26 @@ export function ClaudeSlackSection() {
     <div>
       <div className="flex items-center gap-2">
         <Sparkles size={14} className="text-src-agent" />
-        <h4 className="text-[13px] font-semibold">Slack via Claude</h4>
-        <span className="rounded-pill bg-src-agent/12 px-1.5 py-0.5 text-[10px] font-medium text-src-agent">
-          Recommended
+        <h4 className="text-[13px] font-semibold">Day &amp; week summaries via Claude</h4>
+        <span className="rounded-pill bg-surface-3 px-1.5 py-0.5 text-[10px] font-medium text-ink-2">
+          Optional · slow
         </span>
+        <label className="ml-auto flex cursor-default items-center gap-2 text-[13px] font-medium">
+          <input
+            type="checkbox"
+            checked={summaries}
+            disabled={!available}
+            onChange={(e) => void setSummaries(e.target.checked)}
+            className="size-3.5 accent-accent"
+          />
+          Enabled
+        </label>
       </div>
       <p className="mt-1.5 text-[13px] leading-5 text-ink-2">
-        Uses the <span className="font-medium">claude</span> CLI's Slack connector to pull your mentions
-        and DMs — and to flag messages that are relevant to you even without an @-mention. No Slack app
-        or token needed.
+        The <span className="font-medium">claude</span> CLI reads Slack through its official connector
+        and writes the "Slack summary" card (today / this week) plus extracted tasks. Each round is an
+        agentic read that takes a few minutes, so it runs at most hourly. Mentions, DMs and relevance
+        already come from the fast path above — leave this off if you only want the inbox items.
       </p>
 
       {!available && (
@@ -53,31 +58,7 @@ export function ClaudeSlackSection() {
         </p>
       )}
 
-      {/* About-me profile improves implicit-relevance detection */}
-      <label className="mt-3 block text-xs font-medium text-ink-2">
-        About you <span className="font-normal text-ink-3">— helps detect relevant messages</span>
-      </label>
-      <textarea
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => draft !== aboutMe && void setConfig(enabled, draft)}
-        placeholder="e.g. I own the payments webhook and the internal API. Team: Platform. Aliases: Edu, Eduardo. Current projects: notifications migration."
-        rows={3}
-        className="mt-1 w-full resize-none rounded-xl border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-3 focus:border-accent"
-      />
-
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <label className="flex cursor-default items-center gap-2 text-[13px] font-medium">
-          <input
-            type="checkbox"
-            checked={enabled}
-            disabled={!available}
-            onChange={(e) => void setConfig(e.target.checked, draft)}
-            className="size-3.5 accent-accent"
-          />
-          Enable Slack analysis
-        </label>
-
         <Button size="sm" variant="secondary" onClick={() => void check()} disabled={checking || !available}>
           {checking ? <Loader2 size={13} className="animate-spin" /> : <PlugZap size={13} />}
           Check connection
@@ -100,7 +81,7 @@ export function ClaudeSlackSection() {
           <>
             <Loader2 size={13} className="animate-spin text-src-agent" />
             <span className="text-[13px] font-medium text-src-agent">Analyzing your Slack…</span>
-            <span className="text-[11px] text-ink-3">this takes ~1 min</span>
+            <span className="text-[11px] text-ink-3">this takes a few minutes</span>
           </>
         ) : (
           <>
@@ -109,16 +90,14 @@ export function ClaudeSlackSection() {
                 ? `Last run failed: ${lastError}`
                 : lastSyncAt
                   ? `Last analyzed ${relativeTime(lastSyncAt)}`
-                  : enabled
-                    ? "Not analyzed yet"
-                    : "Enable to start analyzing"}
+                  : "Not analyzed yet"}
             </span>
             <button
               onClick={() => void sync()}
-              disabled={!enabled}
+              disabled={!enabled || !available}
               className={cn(
                 "ml-auto inline-flex cursor-default items-center gap-1 text-xs font-medium",
-                enabled ? "text-accent hover:underline" : "text-ink-3",
+                enabled && available ? "text-accent hover:underline" : "text-ink-3",
               )}
             >
               <RefreshCw size={11} />

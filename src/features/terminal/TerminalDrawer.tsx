@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { Plus, X, ChevronDown, Bot, TerminalSquare } from "lucide-react";
 import { useTerminal } from "../../stores/terminal";
 import { XtermView } from "./XtermView";
@@ -7,21 +6,9 @@ import { cn } from "../../lib/utils";
 import { IconButton } from "../../components/ui/IconButton";
 
 export function TerminalDrawer() {
-  const { open, tabs, activeId, toggle, newShell, activate, close, setOpen } = useTerminal();
+  const { open, tabs, activeId, newShell, activate, close, setOpen } = useTerminal();
   // Dragging the top edge up grows the drawer (sign -1 on the y axis).
   const [height, startDrag] = usePaneSize("terminal", 288, 160, 720);
-
-  // ⌘J / Ctrl+J toggles the drawer.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
-        e.preventDefault();
-        toggle();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [toggle]);
 
   // Hidden with CSS, not unmounted: unmounting would kill every PTY session
   // (including running Claude agents) and lose scrollback.
@@ -48,7 +35,7 @@ export function TerminalDrawer() {
               key={t.id}
               onClick={() => activate(t.id)}
               className={cn(
-                "group flex h-7 cursor-default items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium",
+                "press group flex h-7 cursor-default items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium",
                 t.id === activeId ? "bg-surface-3 text-ink" : "text-ink-3 hover:text-ink",
               )}
             >

@@ -19,20 +19,28 @@
         "minHeight": 600,
         "center": true,
         "hiddenTitle": true,
-        "titleBarStyle": "Overlay"
+        "titleBarStyle": "Overlay",
+        "transparent": true,
+        "windowEffects": {
+          "effects": [
+            "sidebar"
+          ],
+          "state": "followsWindowActiveState"
+        }
       }
     ],
     "security": {
       "csp": null
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
     "targets": "all",
     "category": "DeveloperTool",
     "copyright": "© 2026 Eduardo Montilva",
-    "shortDescription": "Fully Local Dispatcher for Slack, Messages, Dev-tasks & PRs",
-    "longDescription": "One inbox for everything a developer needs to act on — PR reviews, Slack mentions, Linear tickets, and calendar events — with a Claude Code agent one click away.",
+    "shortDescription": "Fully Local Dispatcher for Sentry, Meetings, Dev-tasks & PRs",
+    "longDescription": "One inbox for everything a developer needs to act on — PR reviews, Linear tickets, Sentry errors, meetings and calendar events — with a Claude Code agent one click away.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

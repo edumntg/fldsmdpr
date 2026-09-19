@@ -5,7 +5,7 @@ const SERVICE: &str = "com.eduardomontilva.fldsmdpr";
 /// All secrets live in ONE keychain item as a JSON object. Ad-hoc-signed dev
 /// builds get a fresh code identity every rebuild, which makes macOS re-ask
 /// permission per keychain item — one blob means one prompt instead of one
-/// per token (GitHub, Linear, Sentry, Slack ×2, …).
+/// per token (GitHub, Linear, Sentry, …).
 const BLOB_KEY: &str = "secrets";
 
 /// In-memory copy of the blob, loaded from the keychain at most once per app

@@ -65,7 +65,7 @@ fn resolve_program(program: &str) -> String {
         return program.to_string();
     }
     if program == "claude" {
-        if let Some(p) = crate::connectors::slack::claude_bin() {
+        if let Some(p) = crate::claude_cli::claude_bin() {
             return p.display().to_string();
         }
     }
