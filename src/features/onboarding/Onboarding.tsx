@@ -8,6 +8,7 @@ import { CalendarCard } from "../connections/CalendarCard";
 import { SlackConnectionCard } from "../connections/SlackConnectionCard";
 import { JevCard } from "../connections/JevCard";
 import { Sparkles } from "lucide-react";
+import { OnboardingFlow } from "./OnboardingFlow";
 import { useConnections, connectedCount } from "../../stores/connections";
 import { Button } from "../../components/ui/Button";
 import { cn } from "../../lib/utils";
@@ -101,6 +102,11 @@ export function Onboarding() {
           ))}
         </div>
 
+        {/* live map: tools light up as you connect them */}
+        <div className="mx-6 mt-4 rounded-xl border border-line bg-surface-2/60 px-3 py-2">
+          <OnboardingFlow current={provider ? provider.id : step === jevStep ? "jev" : null} />
+        </div>
+
         {/* body */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {step === 0 && (
@@ -110,11 +116,10 @@ export function Onboarding() {
               </div>
               <h3 className="text-[16px] font-semibold">One inbox for everything actionable</h3>
               <p className="max-w-md text-[13px] leading-5.5 text-ink-2">
-                FLDSMDPR pulls PR reviews, Linear tickets, Sentry errors, and calendar events into a
-                single prioritized inbox. This guide walks you through connecting each tool — where to
-                create the key, which scopes to grant, and where to paste it. Each connection takes about
-                two minutes, and you can skip any of them and come back later from{" "}
-                <span className="font-medium text-ink">Settings → Connections</span>.
+                Each tool you connect above lights up and starts feeding the inbox. Tokens stay in your
+                Mac's keychain and data in a local SQLite file — nothing goes through a server. This
+                guide shows where to create each key and where to paste it; skip any step and come
+                back later from <span className="font-medium text-ink">Settings → Connections</span>.
               </p>
             </div>
           )}
