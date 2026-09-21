@@ -9,6 +9,7 @@ import {
 } from "../lib/ipc";
 import { mockNotifications } from "../features/inbox/mockData";
 import type { SortBy, Range } from "./ui";
+import { involvesMe } from "../lib/involves";
 
 interface InboxState {
   items: AppNotification[];
@@ -69,11 +70,8 @@ const sectionSources: Partial<Record<SectionId, AppNotification["source"][]>> = 
 
 export const isPinned = (n: AppNotification) => n.meta?.pinned === "1";
 
-/** Jev said this item isn't about the user (probability below 0.5). Unjudged → false. */
-export const notMine = (n: AppNotification) => {
-  const p = n.meta?.jev_involves_me;
-  return p !== undefined && Number(p) < 0.5;
-};
+/** Not about the user — see lib/involves.ts (deterministic, no model call). */
+export const notMine = (n: AppNotification) => !involvesMe(n);
 
 /** Sections where Sentry is hidden unless the user toggles it on. */
 const SENTRY_OPTIONAL: SectionId[] = ["inbox", "today"];

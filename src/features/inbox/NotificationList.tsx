@@ -35,7 +35,6 @@ import { useAgents } from "../../stores/agents";
 import { useConnections } from "../../stores/connections";
 import { useAiSources } from "../../stores/aiSources";
 import { useSlackAi } from "../../stores/slackAi";
-import { useJev } from "../../stores/jev";
 import { SlackOverview } from "./SlackOverview";
 import type { AppNotification, SectionId, Source } from "../../lib/types";
 import { cn, relativeTime, useTick, isTyping } from "../../lib/utils";
@@ -190,7 +189,6 @@ export function NotificationList() {
   const toggleSentry = useUi((s) => s.toggleSentry);
   const onlyMine = useUi((s) => s.onlyMine);
   const toggleOnlyMine = useUi((s) => s.toggleOnlyMine);
-  const jevOn = useJev((s) => s.connected && s.enabled);
   const items = useInbox((s) => s.items);
   const loaded = useInbox((s) => s.loaded);
   const setState = useInbox((s) => s.setState);
@@ -291,15 +289,13 @@ export function NotificationList() {
                   <Flame size={15} />
                 </IconButton>
               )}
-              {jevOn && (
-                <IconButton
-                  label={onlyMine ? "Showing only items about you (Jev)" : "Only items about you (Jev)"}
-                  onClick={toggleOnlyMine}
-                  className={cn(onlyMine && "bg-accent-soft text-accent hover:bg-accent-soft hover:text-accent")}
-                >
-                  <UserCheck size={15} />
-                </IconButton>
-              )}
+              <IconButton
+                label={onlyMine ? "Showing only items about you" : "Only items about you"}
+                onClick={toggleOnlyMine}
+                className={cn(onlyMine && "bg-accent-soft text-accent hover:bg-accent-soft hover:text-accent")}
+              >
+                <UserCheck size={15} />
+              </IconButton>
               {unreadVisible.length > 0 && (
                 <IconButton
                   label={`Mark ${unreadVisible.length} as read`}
@@ -379,7 +375,7 @@ export function NotificationList() {
                     : unreadOnly
                       ? "No unread items here."
                       : onlyMine && range === "all"
-                        ? "Nothing here is about you, per Jev."
+                        ? "Nothing here is about you."
                         : `Nothing from ${RANGE_LABELS[range].toLowerCase()}.`}
                 </p>
                 {unreadOnly && (
