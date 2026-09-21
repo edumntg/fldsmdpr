@@ -1,5 +1,5 @@
 import { Loader2, CheckCircle2, XCircle, CirclePause, Bot, X } from "lucide-react";
-import { useAgents, isActive, isLive, type AgentRun } from "../../stores/agents";
+import { useAgents, isActive, isLive, runnerLabel, type AgentRun } from "../../stores/agents";
 import { cn } from "../../lib/utils";
 
 const statusLabel: Record<AgentRun["status"], string> = {
@@ -41,7 +41,7 @@ export function AgentStatusRow({ run }: { run: AgentRun }) {
         {statusLabel[run.status]}
       </span>
       <span className="truncate text-[11px] text-ink-3">
-        {run.runner === "orca" ? "Orca" : "Claude"}
+        {runnerLabel(run.runner)}
         {run.detail ? ` · ${run.detail}` : ""}
       </span>
     </div>
@@ -65,7 +65,7 @@ export function AgentStatusPanel({ run }: { run: AgentRun }) {
       )}
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-medium text-ink">
-          {run.runner === "orca" ? "Orca agent" : "Claude Code"} — {statusLabel[run.status].replace("…", "")}
+          {runnerLabel(run.runner)} — {statusLabel[run.status].replace("…", "")}
         </p>
         <p className="mt-0.5 text-xs text-ink-2">{run.detail ?? run.label}</p>
       </div>

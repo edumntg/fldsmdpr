@@ -30,6 +30,62 @@ pub fn orca_status() -> OrcaStatus {
     }
 }
 
+/// Claude Desktop (the `claude://` deep-link host). Checked by bundle path so
+/// the runner only shows when it can actually open.
+fn claude_desktop_installed() -> bool {
+    let mut candidates = vec![PathBuf::from("/Applications/Claude.app")];
+    if let Some(home) = std::env::var_os("HOME") {
+        candidates.push(PathBuf::from(home).join("Applications/Claude.app"));
+    }
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        candidates.push(PathBuf::from(local).join("AnthropicClaude/claude.exe"));
+    }
+    candidates.iter().any(|p| p.exists())
+}
+
+#[tauri::command]
+pub fn claude_desktop_status() -> OrcaStatus {
+    OrcaStatus {
+        installed: claude_desktop_installed(),
+    }
+}
+
+fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// Opens the task in Claude Desktop's Claude Code surface via its deep link
+/// (`claude://code/new?folder=…&q=…`). Fire-and-forget: the link exposes no
+/// progress, so the run settles as "launched".
+#[tauri::command]
+pub fn launch_claude_desktop(
+    app: tauri::AppHandle,
+    folder: Option<String>,
+    prompt: String,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    if !claude_desktop_installed() {
+        return Err("Claude Desktop isn't installed (/Applications/Claude.app)".into());
+    }
+    let mut url = String::from("claude://code/new?");
+    if let Some(f) = folder.filter(|f| !f.trim().is_empty()) {
+        url.push_str(&format!("folder={}&", percent_encode(&f)));
+    }
+    url.push_str(&format!("q={}", percent_encode(&prompt)));
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| format!("Couldn't open Claude Desktop: {e}"))
+}
+
 fn run_orca_json(bin: &PathBuf, args: &[&str]) -> Result<serde_json::Value, String> {
     let out = Command::new(bin)
         .args(args)

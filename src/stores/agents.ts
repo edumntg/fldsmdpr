@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { AppNotification } from "../lib/types";
-import { launchOrca, agentSessionUpsert, agentNotify, kvGet } from "../lib/ipc";
+import { launchOrca, launchClaudeDesktop, agentSessionUpsert, agentNotify, kvGet } from "../lib/ipc";
 import { DEFAULT_AGENT_MODEL } from "../lib/models";
 import { useInbox } from "./inbox";
 import { repoLocalPath } from "../lib/pty";
@@ -9,10 +9,15 @@ import { buildAgentPrompt, worktreeName } from "../features/agents/prompt";
 
 export type AgentStatus = "starting" | "working" | "thinking" | "waiting" | "done" | "failed";
 
+export type Runner = "orca" | "claude" | "desktop";
+
+/** Human label for a runner id (also accepts the persisted `mode` string). */
+export const runnerLabel = (r: string) => (r === "orca" ? "Orca" : r === "desktop" ? "Claude Desktop" : "Claude");
+
 export interface AgentRun {
   id: string; // session id (persisted)
   notificationId: string;
-  runner: "orca" | "claude";
+  runner: Runner;
   status: AgentStatus;
   label: string; // the action, e.g. "Review with agent"
   title: string; // what it's working on
@@ -48,7 +53,7 @@ interface AgentsState {
   launch: (
     n: AppNotification,
     label: string,
-    runner: "orca" | "claude",
+    runner: Runner,
     opts?: {
       repoId?: string;
       repoName?: string;
@@ -143,6 +148,19 @@ export const useAgents = create<AgentsState>((set, get) => ({
         "working",
         cwd ? `Built-in terminal · ${cwd.split("/").pop()}` : "Built-in terminal (repo not found locally)",
       );
+      return;
+    }
+
+    // Claude Desktop: hand the prompt + folder to the app via its deep link.
+    if (runner === "desktop") {
+      const cwd = opts?.cwd ?? (repo ? ((await repoLocalPath(repo)) ?? undefined) : undefined);
+      try {
+        await launchClaudeDesktop({ folder: cwd, prompt: buildAgentPrompt(n, label, opts?.extra) });
+        // Like Orca, the dispatch is complete from here — Desktop exposes no progress.
+        get().setStatus(n.id, "done", `Launched in Claude Desktop${cwd ? ` · ${cwd.split("/").pop()}` : ""}`);
+      } catch (e) {
+        get().setStatus(n.id, "failed", e instanceof Error ? e.message : String(e));
+      }
       return;
     }
 
