@@ -10,11 +10,30 @@ import { cn, relativeTime } from "../../lib/utils";
 
 const attack = (n: AppNotification) => Number(n.meta?.jev_attack ?? -1);
 const needs = (n: AppNotification) => Number(n.meta?.jev_needs_action ?? 0);
+/** Jev's "is this about the user specifically" probability; -1 = not judged. */
+const involves = (n: AppNotification) => Number(n.meta?.jev_involves_me ?? -1);
+const INVOLVES_MIN = 0.5;
+
+/** Compact context line: where the item lives and who it comes from. */
+function contextOf(n: AppNotification): string[] {
+  const m = n.meta ?? {};
+  const out: string[] = [];
+  if (m.repo) out.push(m.number ? `${m.repo} ${m.number}` : m.repo);
+  if (m.key && !m.number) out.push(m.key);
+  if (m.project && !m.repo) out.push(m.project);
+  if (m.channel) out.push(m.channel);
+  if (m.from && m.from !== "You") out.push(`from ${m.from}`);
+  if (m.author) out.push(`by ${m.author}`);
+  if (m.state && n.source === "linear") out.push(m.state);
+  if (m.level) out.push(m.level);
+  return out.slice(0, 3);
+}
 
 /**
  * Jev's picks for right now. Every judged item carries an "attack now" score
- * (0–4, see jev.rs); the top N inside the chosen window win. Without Jev the
- * connectors' priorities decide and the card says so.
+ * (0–4) and an "involves me" probability (see jev.rs); only items aimed at the
+ * user compete, ranked by attack score, inside the chosen window. Without Jev
+ * the connectors' priorities decide and the card says so.
  */
 export function pickP0(items: AppNotification[], window: P0Window, count: number, showSentry: boolean) {
   const pool = items.filter(
@@ -28,19 +47,19 @@ export function pickP0(items: AppNotification[], window: P0Window, count: number
   const judged = pool.filter((n) => attack(n) >= 0);
   const byJev = judged.length > 0;
   const byPriority = (a: AppNotification, b: AppNotification) => b.priority - a.priority || b.createdAt - a.createdAt;
-  // Jev-scored items first; anything it hasn't judged yet fills the remaining
-  // slots by connector priority so the card always shows N picks.
-  const ranked = [
-    ...judged.sort((a, b) => attack(b) - attack(a) || needs(b) - needs(a) || b.priority - a.priority),
-    ...pool.filter((n) => attack(n) < 0).sort(byPriority),
-  ];
-  return { picks: ranked.slice(0, count), byJev, poolSize: pool.length };
+  // Only items Jev says are about the user compete. Unjudged items (new since
+  // the last sync) wait for their verdict rather than sneaking in.
+  const mine = judged.filter((n) => involves(n) < 0 || involves(n) >= INVOLVES_MIN);
+  const ranked = byJev
+    ? mine.sort((a, b) => attack(b) - attack(a) || needs(b) - needs(a) || b.priority - a.priority)
+    : pool.sort(byPriority);
+  return { picks: ranked.slice(0, count), byJev, poolSize: pool.length, pending: pool.length - judged.length, mineCount: mine.length };
 }
 
 export function P0Section({ items, goTo }: { items: AppNotification[]; goTo: (n: AppNotification) => void }) {
   const { p0Count, p0Window, setP0Window, showSentry } = useUi();
   const jevOn = useJev((s) => s.connected && s.enabled);
-  const { picks, byJev, poolSize } = pickP0(items, p0Window, p0Count, showSentry);
+  const { picks, byJev, poolSize, pending, mineCount } = pickP0(items, p0Window, p0Count, showSentry);
 
   return (
     <div className="animate-pop-in rounded-card border border-danger/25 bg-surface-2 p-5 shadow-card">
@@ -50,7 +69,11 @@ export function P0Section({ items, goTo }: { items: AppNotification[]; goTo: (n:
         </span>
         <h3 className="text-[13px] font-semibold">P0 · Urgent</h3>
         <span className="text-xs text-ink-3">
-          top {p0Count} of {poolSize} · {byJev ? "ranked by Jev" : jevOn ? "waiting for Jev's verdicts" : "by connector priority"}
+          {byJev
+            ? `${Math.min(p0Count, mineCount)} of ${mineCount} aimed at you${pending > 0 ? ` · ${pending} awaiting judgment` : ""}`
+            : jevOn
+              ? `waiting for Jev's verdicts on ${poolSize}`
+              : `top ${p0Count} of ${poolSize} by connector priority`}
         </span>
         <span className="ml-auto inline-flex items-center gap-0.5 rounded-lg border border-line bg-surface p-0.5">
           {(Object.keys(P0_WINDOW_LABELS) as P0Window[]).map((w) => (
@@ -69,7 +92,11 @@ export function P0Section({ items, goTo }: { items: AppNotification[]; goTo: (n:
       </div>
 
       {picks.length === 0 ? (
-        <p className="text-[13px] text-ink-3">Nothing pressing {p0Window === "today" ? "today" : "this week"}. Enjoy it.</p>
+        <p className="text-[13px] text-ink-3">
+          {byJev
+            ? `Nothing aimed at you ${p0Window === "today" ? "today" : "this week"}. Tell Jev who you are in Settings → About you if that seems off.`
+            : `Nothing pressing ${p0Window === "today" ? "today" : "this week"}. Enjoy it.`}
+        </p>
       ) : (
         <ol className="flex flex-col">
           {picks.map((n, i) => {
@@ -77,10 +104,10 @@ export function P0Section({ items, goTo }: { items: AppNotification[]; goTo: (n:
             const urg = n.meta?.jev_urgency;
             return (
               <li key={n.id} className={cn(i > 0 && "border-t border-line")}>
-                <button onClick={() => goTo(n)} className="group flex w-full cursor-default items-center gap-3 py-2.5 text-left">
+                <button onClick={() => goTo(n)} className="group flex w-full cursor-default items-start gap-3 py-2.5 text-left">
                   <span
                     className={cn(
-                      "flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold tabular-nums",
+                      "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold tabular-nums",
                       i === 0 ? "bg-danger text-white" : "bg-danger/12 text-danger",
                     )}
                   >
@@ -89,21 +116,25 @@ export function P0Section({ items, goTo }: { items: AppNotification[]; goTo: (n:
                   <SourceBadge source={n.source} size={13} n={n} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-semibold">{n.title}</span>
-                    <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-3">
+                    {n.snippet && <span className="mt-0.5 line-clamp-2 text-xs leading-4.5 text-ink-2">{n.snippet}</span>}
+                    <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-ink-3">
+                      {contextOf(n).map((c) => (
+                        <Chip key={c}>{c}</Chip>
+                      ))}
                       {byJev && attack(n) >= 0 && (
                         <Chip tone={attack(n) >= 3 ? "danger" : "warning"}>
                           <Sparkles size={9} />
                           attack {attack(n).toFixed(1)}/4
                         </Chip>
                       )}
-                      {urg && JEV_URGENCY_LABEL[urg] && <span>{JEV_URGENCY_LABEL[urg]}</span>}
+                      {byJev && involves(n) >= 0 && <span>you {Math.round(involves(n) * 100)}%</span>}
+                      {urg && JEV_URGENCY_LABEL[urg] && <span>· {JEV_URGENCY_LABEL[urg]}</span>}
                       {byJev && attack(n) >= 0 && <span>· needs you {Math.round(needs(n) * 100)}%</span>}
-                      {byJev && attack(n) < 0 && <span>· not judged yet</span>}
                       {action && <span>· {action}</span>}
                       <span>· {relativeTime(n.createdAt)}</span>
                     </span>
                   </span>
-                  <ArrowRight size={13} className="shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100" />
+                  <ArrowRight size={13} className="mt-1.5 shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100" />
                 </button>
               </li>
             );

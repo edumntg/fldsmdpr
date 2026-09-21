@@ -95,7 +95,7 @@ pub async fn ai_source_sync(
             .map(|t| t - 30 * 60_000);
         (
             kv(&conn, &format!("{source}:ai_enabled")).as_deref() == Some("1"),
-            kv(&conn, "about_me").unwrap_or_default(),
+            crate::jev::profile_text(&conn),
             since,
             granola_hours,
         )

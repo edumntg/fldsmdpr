@@ -567,7 +567,7 @@ pub async fn fetch(
                             "is_dm": m.is_dm,
                             "in_thread": m.in_thread,
                             "text": m.text.chars().take(1200).collect::<String>(),
-                            "about_the_user": about_me.chars().take(600).collect::<String>(),
+                            "about_the_user": about_me.chars().take(900).collect::<String>(),
                         }),
                     )
                 })

@@ -69,6 +69,12 @@ const sectionSources: Partial<Record<SectionId, AppNotification["source"][]>> = 
 
 export const isPinned = (n: AppNotification) => n.meta?.pinned === "1";
 
+/** Jev said this item isn't about the user (probability below 0.5). Unjudged → false. */
+export const notMine = (n: AppNotification) => {
+  const p = n.meta?.jev_involves_me;
+  return p !== undefined && Number(p) < 0.5;
+};
+
 /** Sections where Sentry is hidden unless the user toggles it on. */
 const SENTRY_OPTIONAL: SectionId[] = ["inbox", "today"];
 
