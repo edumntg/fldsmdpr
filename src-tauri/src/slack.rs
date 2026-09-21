@@ -263,7 +263,7 @@ pub async fn slack_ai_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Resul
             });
         (
             is_enabled(&conn) && kv_get(&conn, SUMMARIES_KV).as_deref() == Some("1"),
-            kv_get(&conn, "about_me").unwrap_or_default(),
+            crate::jev::profile_text(&conn),
             incr,
         )
     };

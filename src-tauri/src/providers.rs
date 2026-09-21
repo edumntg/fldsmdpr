@@ -345,7 +345,7 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
                     .collect::<Vec<_>>(),
                 since,
                 crate::jev::ready(&conn),
-                kv_get(&conn, "about_me").unwrap_or_default(),
+                crate::jev::profile_text(&conn),
             )
         };
         if enabled {

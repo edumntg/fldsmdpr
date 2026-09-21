@@ -26,14 +26,16 @@ import {
   Flame,
   CalendarRange,
   Loader2,
+  UserCheck,
 } from "lucide-react";
-import { useInbox, filterBySection, isPinned, inRange } from "../../stores/inbox";
+import { useInbox, filterBySection, isPinned, inRange, notMine } from "../../stores/inbox";
 import { useUi } from "../../stores/ui";
 import { useSync } from "../../stores/sync";
 import { useAgents } from "../../stores/agents";
 import { useConnections } from "../../stores/connections";
 import { useAiSources } from "../../stores/aiSources";
 import { useSlackAi } from "../../stores/slackAi";
+import { useJev } from "../../stores/jev";
 import { SlackOverview } from "./SlackOverview";
 import type { AppNotification, SectionId, Source } from "../../lib/types";
 import { cn, relativeTime, useTick, isTyping } from "../../lib/utils";
@@ -186,6 +188,9 @@ export function NotificationList() {
   const setRange = useUi((s) => s.setRange);
   const showSentry = useUi((s) => s.showSentry);
   const toggleSentry = useUi((s) => s.toggleSentry);
+  const onlyMine = useUi((s) => s.onlyMine);
+  const toggleOnlyMine = useUi((s) => s.toggleOnlyMine);
+  const jevOn = useJev((s) => s.connected && s.enabled);
   const items = useInbox((s) => s.items);
   const loaded = useInbox((s) => s.loaded);
   const setState = useInbox((s) => s.setState);
@@ -206,6 +211,7 @@ export function NotificationList() {
   const visible = sectionItems.filter(
     (n) =>
       inRange(n, range) &&
+      !(onlyMine && notMine(n)) &&
       (!unreadOnly || n.state === "unread") &&
       (!q ||
         [n.title, n.snippet, sourceLabel(n.source), ...Object.values(n.meta ?? {})]
@@ -285,6 +291,15 @@ export function NotificationList() {
                   <Flame size={15} />
                 </IconButton>
               )}
+              {jevOn && (
+                <IconButton
+                  label={onlyMine ? "Showing only items about you (Jev)" : "Only items about you (Jev)"}
+                  onClick={toggleOnlyMine}
+                  className={cn(onlyMine && "bg-accent-soft text-accent hover:bg-accent-soft hover:text-accent")}
+                >
+                  <UserCheck size={15} />
+                </IconButton>
+              )}
               {unreadVisible.length > 0 && (
                 <IconButton
                   label={`Mark ${unreadVisible.length} as read`}
@@ -356,14 +371,16 @@ export function NotificationList() {
               ))}
             </div>
           ) : visible.length === 0 ? (
-            q || unreadOnly || range !== "all" ? (
+            q || unreadOnly || range !== "all" || onlyMine ? (
               <div className="flex flex-col items-center gap-2 px-2 py-10 text-center text-[13px] text-ink-3">
                 <p>
                   {q
                     ? `No items match “${query.trim()}”.`
                     : unreadOnly
                       ? "No unread items here."
-                      : `Nothing from ${RANGE_LABELS[range].toLowerCase()}.`}
+                      : onlyMine && range === "all"
+                        ? "Nothing here is about you, per Jev."
+                        : `Nothing from ${RANGE_LABELS[range].toLowerCase()}.`}
                 </p>
                 {unreadOnly && (
                   <Button size="sm" variant="ghost" onClick={toggleUnreadOnly}>
@@ -373,6 +390,11 @@ export function NotificationList() {
                 {!unreadOnly && range !== "all" && (
                   <Button size="sm" variant="ghost" onClick={() => setRange("all")}>
                     Show all time
+                  </Button>
+                )}
+                {!unreadOnly && range === "all" && onlyMine && (
+                  <Button size="sm" variant="ghost" onClick={toggleOnlyMine}>
+                    Show everything
                   </Button>
                 )}
               </div>

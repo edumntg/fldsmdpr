@@ -37,10 +37,14 @@ export function SettingsView() {
   const { p0Count, setP0Count, p0Window, setP0Window } = useUi();
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [aboutMe, setAboutMe] = useState<string | null>(null);
+  const [profile, setProfile] = useState<{ name: string; email: string; handles: string; role: string } | null>(null);
 
   useEffect(() => {
     void appInfo().then(setInfo);
     void kvGet("about_me").then((v) => setAboutMe(v ?? ""));
+    void Promise.all([kvGet("profile:name"), kvGet("profile:email"), kvGet("profile:handles"), kvGet("profile:role")]).then(
+      ([name, email, handles, role]) => setProfile({ name: name ?? "", email: email ?? "", handles: handles ?? "", role: role ?? "" }),
+    );
   }, []);
 
   const densities: { id: Density; label: string; icon: typeof Rows3 }[] = [
@@ -242,20 +246,46 @@ export function SettingsView() {
           </div>
 
           <Card title="About you">
-            <p className="mb-2 text-xs text-ink-3">
-              A few lines about your role, team and the services you own. Slack, Notion and the AI triage use it to judge
-              what's relevant to you.
+            <p className="mb-3 text-xs text-ink-3">
+              Who the AI should look for. Jev uses this to tell whether an item is aimed at you (P0 picks,
+              triage); Slack and Notion rounds use it to spot messages about you or your services.
+              Everything stays local; only these lines travel with each judgment.
             </p>
-            <textarea
-              value={aboutMe ?? ""}
-              disabled={aboutMe === null}
-              onChange={(e) => setAboutMe(e.target.value)}
-              onBlur={() => aboutMe !== null && void kvSet("about_me", aboutMe)}
-              rows={3}
-              placeholder="e.g. Backend engineer on the Platform team; I own the payments webhook and the sync worker."
-              className="w-full resize-y rounded-xl border border-line bg-surface px-3 py-2 text-[13px] leading-5 text-ink outline-none transition-[border-color,box-shadow] placeholder:text-ink-3 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
-            />
-            <p className="mt-1.5 text-[11px] text-ink-3">Saved when you click away. Stored locally only.</p>
+            <div className="flex flex-col gap-2.5">
+              {(
+                [
+                  { key: "name", label: "Your name", placeholder: "e.g. Eduardo Montilva" },
+                  { key: "email", label: "Email", placeholder: "e.g. eduardo@company.com" },
+                  { key: "handles", label: "Handles & aliases", placeholder: "e.g. @edumntg (GitHub), @eduardo.m (Slack), Edu" },
+                  { key: "role", label: "Role & team", placeholder: "e.g. Backend engineer, Platform team" },
+                ] as const
+              ).map((f) => (
+                <label key={f.key} className="flex items-center gap-3">
+                  <span className="w-32 shrink-0 text-xs font-medium text-ink-2">{f.label}</span>
+                  <input
+                    value={profile?.[f.key] ?? ""}
+                    disabled={profile === null}
+                    onChange={(e) => setProfile((p) => (p ? { ...p, [f.key]: e.target.value } : p))}
+                    onBlur={() => profile && void kvSet(`profile:${f.key}`, profile[f.key])}
+                    placeholder={f.placeholder}
+                    className="h-8.5 flex-1 rounded-xl border border-line bg-surface px-3 text-[13px] text-ink outline-none transition-[border-color,box-shadow] placeholder:text-ink-3 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
+                  />
+                </label>
+              ))}
+              <label className="flex items-start gap-3">
+                <span className="w-32 shrink-0 pt-2 text-xs font-medium text-ink-2">Brief about you</span>
+                <textarea
+                  value={aboutMe ?? ""}
+                  disabled={aboutMe === null}
+                  onChange={(e) => setAboutMe(e.target.value)}
+                  onBlur={() => aboutMe !== null && void kvSet("about_me", aboutMe)}
+                  rows={3}
+                  placeholder="A few lines: what you work on, the services and repos you own, decisions that should reach you."
+                  className="flex-1 resize-y rounded-xl border border-line bg-surface px-3 py-2 text-[13px] leading-5 text-ink outline-none transition-[border-color,box-shadow] placeholder:text-ink-3 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
+                />
+              </label>
+            </div>
+            <p className="mt-2 text-[11px] text-ink-3">Saved when you click away. Items already judged are re-judged on the next sync.</p>
           </Card>
 
           <Card title="Storage">

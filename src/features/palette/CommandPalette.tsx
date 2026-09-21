@@ -54,7 +54,7 @@ interface Command {
 type Row = { kind: "command"; c: Command } | { kind: "notification"; n: AppNotification };
 
 export function CommandPalette() {
-  const { paletteOpen, setPaletteOpen, setSection, select, selectedId, setHelpOpen, showSentry, toggleSentry } = useUi();
+  const { paletteOpen, setPaletteOpen, setSection, select, selectedId, setHelpOpen, showSentry, toggleSentry, onlyMine, toggleOnlyMine } = useUi();
   const setThemePref = useTheme((s) => s.setPref);
   const setAccent = useTheme((s) => s.setAccent);
   const selected = useInbox((s) => s.items.find((n) => n.id === selectedId));
@@ -129,13 +129,19 @@ export function CommandPalette() {
       })),
       { id: "shortcuts", label: "Keyboard shortcuts", hint: "?", icon: Keyboard, run: () => setHelpOpen(true) },
       {
+        id: "toggle-mine",
+        label: onlyMine ? "Show all items (not only mine)" : "Only items about me (Jev)",
+        icon: Sparkles,
+        run: toggleOnlyMine,
+      },
+      {
         id: "toggle-sentry",
         label: showSentry ? "Hide Sentry errors in Inbox & Today" : "Show Sentry errors in Inbox & Today",
         icon: Flame,
         run: toggleSentry,
       },
     ];
-  }, [setSection, setThemePref, setAccent, sync, startOnboarding, selected, setHelpOpen, showSentry, toggleSentry, slackEnabled]);
+  }, [setSection, setThemePref, setAccent, sync, startOnboarding, selected, setHelpOpen, showSentry, toggleSentry, slackEnabled, onlyMine, toggleOnlyMine]);
 
   // Full-text search over everything ever received (incl. done/archived) —
   // debounced so typing doesn't hammer SQLite.

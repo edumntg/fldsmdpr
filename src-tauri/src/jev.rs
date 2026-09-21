@@ -98,6 +98,32 @@ pub async fn decide(
         .ok_or_else(|| "OpenRouter returned no answers".to_string())
 }
 
+/// Who the user is, for every model that judges relevance (Jev triage, Slack
+/// fast path, Notion/Slack claude rounds). Built from the structured profile
+/// fields in Settings → About you plus the free-text notes.
+pub fn profile_text(conn: &rusqlite::Connection) -> String {
+    let mut parts = Vec::new();
+    if let Some(v) = kv_get(conn, "profile:name").filter(|v| !v.trim().is_empty()) {
+        parts.push(format!("Name: {}.", v.trim()));
+    }
+    if let Some(v) = kv_get(conn, "profile:email").filter(|v| !v.trim().is_empty()) {
+        parts.push(format!("Email: {}.", v.trim()));
+    }
+    if let Some(v) = kv_get(conn, "profile:handles").filter(|v| !v.trim().is_empty()) {
+        parts.push(format!(
+            "Handles and aliases (GitHub, Slack, Linear, email): {}.",
+            v.trim()
+        ));
+    }
+    if let Some(v) = kv_get(conn, "profile:role").filter(|v| !v.trim().is_empty()) {
+        parts.push(format!("Role and team: {}.", v.trim()));
+    }
+    if let Some(v) = kv_get(conn, "about_me").filter(|v| !v.trim().is_empty()) {
+        parts.push(v.trim().to_string());
+    }
+    parts.join(" ")
+}
+
 /// Key present + not disabled → Jev runs inside every sync.
 pub fn ready(conn: &rusqlite::Connection) -> Option<String> {
     if kv_get(conn, ENABLED_KV).as_deref() == Some("0") {
@@ -162,7 +188,7 @@ fn item_state(r: &Row, about_me: &str) -> Value {
         }
     }
     if !about_me.trim().is_empty() {
-        st["about_the_user"] = Value::String(trim(about_me, 600));
+        st["about_the_user"] = Value::String(trim(about_me, 900));
     }
     st
 }
@@ -177,6 +203,14 @@ fn triage_questions() -> Value {
                 "today": "Someone is waiting on the user (a review request, a direct ask, a failing CI on their PR, a meeting today).",
                 "this_week": "Real work assigned to the user with no immediate pressure.",
                 "fyi": "Informational only: an update, a merged/closed item, a low-severity error, nothing to do."
+            }
+        },
+        "involves_me": {
+            "type": "noul",
+            "instructions": "This item is about the user specifically: assigned to them, a review or answer requested from them, their name or handle mentioned, or something they own (see about_the_user).",
+            "criteria": {
+                "true": "The user is the addressee or owner: their name/handle appears, it's assigned to them, or it's about a service, repo or decision they own.",
+                "false": "Aimed at someone else or at nobody in particular; the user is at most a bystander."
             }
         },
         "needs_action": {
@@ -230,7 +264,9 @@ fn apply_triage(answers: &Value, content_hash: &str) -> (Value, Option<f64>) {
     let action = answers["action"]["choice"].as_str().unwrap_or("none");
     // 0–4 "attack now" score; the Today view's P0 card ranks by it.
     let attack = answers["attack_now"]["score"].as_f64().unwrap_or(0.0);
+    let involves = answers["involves_me"]["noul"].as_f64().unwrap_or(0.5);
     let mut patch = json!({
+        "jev_involves_me": format!("{involves:.2}"),
         "jev_hash": content_hash,
         "jev_urgency": urgency,
         "jev_confidence": format!("{conf:.2}"),
@@ -254,16 +290,13 @@ fn apply_triage(answers: &Value, content_hash: &str) -> (Value, Option<f64>) {
 async fn triage(db: &AppDb, key: &str) -> Result<usize, String> {
     let (rows, about_me) = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        (
-            load_rows(&conn, "state != 'done'")?,
-            kv_get(&conn, "about_me").unwrap_or_default(),
-        )
+        (load_rows(&conn, "state != 'done'")?, profile_text(&conn))
     };
     let pending: Vec<(Row, String)> = rows
         .into_iter()
         .filter_map(|r| {
-            // "v2": question set changed (attack_now added) → re-judge once.
-            let h = hash(&format!("{}\n{}\nv2", r.title, r.snippet));
+            // "v3": question set changed (involves_me added) → re-judge once.
+            let h = hash(&format!("{}\n{}\nv3", r.title, r.snippet));
             (r.meta["jev_hash"].as_str() != Some(h.as_str())).then_some((r, h))
         })
         .collect();
@@ -471,7 +504,7 @@ pub async fn jev_judge_samples(
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         (
             ready(&conn).ok_or("Jev isn't connected")?,
-            kv_get(&conn, "about_me").unwrap_or_default(),
+            profile_text(&conn),
         )
     };
     let client = client()?;

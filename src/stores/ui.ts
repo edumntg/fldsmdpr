@@ -28,6 +28,9 @@ interface UiState {
   /** Sentry errors stay out of Inbox/Today unless toggled on (the Errors section always shows them). */
   showSentry: boolean;
   toggleSentry: () => void;
+  /** Hide items Jev judged as not about the user (unjudged ones stay). */
+  onlyMine: boolean;
+  toggleOnlyMine: () => void;
   /** Today → "P0 · Urgent": how many picks (3–5) and over which window. */
   p0Count: number;
   setP0Count: (n: number) => void;
@@ -82,6 +85,12 @@ export const useUi = create<UiState>((set) => ({
     set((s) => {
       localStorage.setItem("ui:showSentry", s.showSentry ? "0" : "1");
       return { showSentry: !s.showSentry };
+    }),
+  onlyMine: localStorage.getItem("ui:onlyMine") === "1",
+  toggleOnlyMine: () =>
+    set((s) => {
+      localStorage.setItem("ui:onlyMine", s.onlyMine ? "0" : "1");
+      return { onlyMine: !s.onlyMine };
     }),
   p0Count: Math.min(5, Math.max(3, Number(localStorage.getItem("ui:p0Count")) || 3)),
   setP0Count: (n) => {
