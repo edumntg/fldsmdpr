@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Loader2, CheckCircle2, XCircle, CirclePause, Bot, TerminalSquare, RefreshCw } from "lucide-react";
-import { useAgents, type AgentRun } from "../../stores/agents";
+import { Loader2, CheckCircle2, XCircle, CirclePause, Bot, TerminalSquare, RefreshCw, AppWindow } from "lucide-react";
+import { useAgents, runnerLabel, type AgentRun } from "../../stores/agents";
 import { agentSessionsList, agentSessionUpsert, type AgentSession } from "../../lib/ipc";
 import { SourceBadge } from "../../components/ui/SourceBadge";
 import { Chip } from "../../components/ui/Chip";
@@ -164,8 +164,8 @@ function WorkCard({ r }: { r: WorkRow }) {
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <Chip>
-            {r.runner === "orca" ? <Bot size={10} /> : <TerminalSquare size={10} />}
-            {r.runner === "orca" ? "Orca" : "Claude"}
+            {r.runner === "orca" ? <Bot size={10} /> : r.runner === "desktop" ? <AppWindow size={10} /> : <TerminalSquare size={10} />}
+            {runnerLabel(r.runner)}
           </Chip>
           <span className="text-[11px] text-ink-3">{r.label}</span>
           {r.detail && <span className="truncate text-[11px] text-ink-3">· {r.detail}</span>}

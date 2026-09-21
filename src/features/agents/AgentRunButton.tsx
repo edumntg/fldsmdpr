@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  AppWindow,
   Bot,
   ChevronDown,
   TerminalSquare,
@@ -11,14 +12,14 @@ import {
   Check,
 } from "lucide-react";
 import type { AppNotification } from "../../lib/types";
-import { orcaStatus, orcaRepos, kvGet, kvSet, type OrcaRepo } from "../../lib/ipc";
+import { orcaStatus, orcaRepos, claudeDesktopStatus, kvGet, kvSet, type OrcaRepo } from "../../lib/ipc";
 import { AGENT_MODELS, DEFAULT_AGENT_MODEL } from "../../lib/models";
 import { pickFolder } from "../../lib/pty";
 import { useAgents, isActive } from "../../stores/agents";
 import { AgentStatusRow } from "./AgentStatusRow";
 import { cn } from "../../lib/utils";
 
-type MenuView = "runners" | "orca-repos" | "claude-folder";
+type MenuView = "runners" | "orca-repos" | "claude-folder" | "desktop-folder";
 
 /**
  * Shared runner picker: Orca → choose one of Orca's registered repos;
@@ -43,6 +44,7 @@ function AgentRunnerMenu({
   const [model, setModel] = useState(DEFAULT_AGENT_MODEL);
   const [skipPerms, setSkipPerms] = useState(true);
   const [orcaInstalled, setOrcaInstalled] = useState(false);
+  const [desktopInstalled, setDesktopInstalled] = useState(false);
   const [repos, setRepos] = useState<OrcaRepo[] | null>(null);
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [repoError, setRepoError] = useState<string | null>(null);
@@ -51,6 +53,7 @@ function AgentRunnerMenu({
 
   useEffect(() => {
     void orcaStatus().then((s) => setOrcaInstalled(s.installed));
+    void claudeDesktopStatus().then((s) => setDesktopInstalled(s.installed));
     void kvGet("agent_model").then((m) => m && setModel(m));
     void kvGet("agent_skip_permissions").then((v) => setSkipPerms(v !== "0"));
   }, []);
@@ -93,7 +96,7 @@ function AgentRunnerMenu({
       : rect.bottom + 6;
 
   useEffect(() => {
-    if ((view === "orca-repos" || view === "claude-folder") && repos === null && !loadingRepos) {
+    if (view !== "runners" && repos === null && !loadingRepos) {
       setLoadingRepos(true);
       setRepoError(null);
       orcaRepos()
@@ -121,9 +124,13 @@ function AgentRunnerMenu({
     onClose();
     void launch(n, label, "claude", { cwd, model, skipPermissions: skipPerms });
   };
-  const browseAndRun = async () => {
+  const runDesktop = (cwd?: string) => {
+    onClose();
+    void launch(n, label, "desktop", { cwd });
+  };
+  const browseAndRun = async (runner: "claude" | "desktop" = "claude") => {
     const folder = await pickFolder();
-    if (folder) runClaude(folder);
+    if (folder) (runner === "desktop" ? runDesktop : runClaude)(folder);
   };
 
   const repoList = (onPick: (r: OrcaRepo) => void, subtitleOf: (r: OrcaRepo) => string) => (
@@ -180,6 +187,13 @@ function AgentRunnerMenu({
             subtitle="Pick the repo folder → runs in the terminal"
             onClick={() => setView("claude-folder")}
           />
+          <RunnerOption
+            icon={AppWindow}
+            title="Claude Desktop"
+            subtitle={desktopInstalled ? "Opens the task in the Claude app" : "Claude Desktop not detected"}
+            disabled={!desktopInstalled}
+            onClick={() => setView("desktop-folder")}
+          />
         </>
       )}
 
@@ -194,7 +208,11 @@ function AgentRunnerMenu({
               <ArrowLeft size={14} />
             </button>
             <span className="text-[11px] font-semibold tracking-wide text-ink-2 uppercase">
-              {view === "orca-repos" ? "Select a repo (Orca)" : "Select the repo folder (Claude)"}
+              {view === "orca-repos"
+                ? "Select a repo (Orca)"
+                : view === "desktop-folder"
+                  ? "Select the repo folder (Claude Desktop)"
+                  : "Select the repo folder (Claude)"}
             </span>
           </div>
 
@@ -233,6 +251,25 @@ function AgentRunnerMenu({
               >
                 <FolderOpen size={14} className="shrink-0 text-accent" />
                 <span className="text-[13px] font-medium text-accent">Browse for a folder…</span>
+              </button>
+            </>
+          )}
+
+          {view === "desktop-folder" && (
+            <>
+              {repoList((r) => runDesktop(r.path), (r) => r.path)}
+              <button
+                onClick={() => void browseAndRun("desktop")}
+                className="mt-1 flex w-full cursor-default items-center gap-2.5 rounded-lg border-t border-line p-2 pt-2.5 text-left transition-colors hover:bg-surface-3"
+              >
+                <FolderOpen size={14} className="shrink-0 text-accent" />
+                <span className="text-[13px] font-medium text-accent">Browse for a folder…</span>
+              </button>
+              <button
+                onClick={() => runDesktop(undefined)}
+                className="flex w-full cursor-default items-center gap-2.5 rounded-lg p-2 text-left text-[12.5px] text-ink-2 transition-colors hover:bg-surface-3"
+              >
+                Open without a folder
               </button>
             </>
           )}

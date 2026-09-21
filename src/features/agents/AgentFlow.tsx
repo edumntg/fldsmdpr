@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Bot, TerminalSquare, CheckCircle2, XCircle, CirclePause, Loader2, GitPullRequest, Sparkles } from "lucide-react";
 import { FlowStage, FlowBox, FlowChip, useFlowTokens, type FlowNode, type FlowEdge } from "../../components/flow/FlowStage";
-import { useAgents, isActive, type AgentRun } from "../../stores/agents";
+import { useAgents, isActive, runnerLabel, type AgentRun } from "../../stores/agents";
 import { useTerminal } from "../../stores/terminal";
 import { SourceBadge } from "../../components/ui/SourceBadge";
 import type { AppNotification } from "../../lib/types";
@@ -93,7 +93,7 @@ export function AgentFlow({ run, n }: { run: AgentRun; n: AppNotification }) {
         render: (
           <FlowBox
             icon={<Bot size={15} />}
-            label={run.runner === "orca" ? "Orca" : "Claude"}
+            label={runnerLabel(run.runner)}
             sub={run.label}
             color="var(--src-agent)"
             pulse={run.status === "starting" || run.status === "waiting"}
@@ -110,7 +110,7 @@ export function AgentFlow({ run, n }: { run: AgentRun; n: AppNotification }) {
         render: (
           <FlowBox
             icon={working ? <Loader2 size={15} className="animate-spin" /> : <TerminalSquare size={15} />}
-            label={run.runner === "orca" ? "Worktree" : "Terminal"}
+            label={run.runner === "orca" ? "Worktree" : run.runner === "desktop" ? "Claude app" : "Terminal"}
             sub={working ? "working…" : run.detail && run.status === "waiting" ? "paused" : tab ? "open" : "closed"}
             color="var(--accent)"
             dim={!working && run.status !== "waiting" && !tab}

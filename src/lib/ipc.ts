@@ -604,6 +604,20 @@ export async function orcaRepos(): Promise<OrcaRepo[]> {
   return invoke<OrcaRepo[]>("orca_repos");
 }
 
+export async function claudeDesktopStatus(): Promise<{ installed: boolean }> {
+  if (!inTauri) return { installed: true }; // browser preview pretends it's there
+  return invoke<{ installed: boolean }>("claude_desktop_status");
+}
+
+/** Open the task in Claude Desktop (claude://code/new deep link). No progress feedback. */
+export async function launchClaudeDesktop(args: { folder?: string; prompt: string }): Promise<void> {
+  if (!inTauri) {
+    await new Promise((r) => setTimeout(r, 300));
+    return;
+  }
+  return invoke("launch_claude_desktop", args);
+}
+
 export async function launchOrca(args: {
   name: string;
   repo: string;

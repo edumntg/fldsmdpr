@@ -72,6 +72,8 @@ pub fn run() {
             agents::agent_session_upsert,
             agents::agent_sessions_list,
             agents::launch_orca,
+            agents::claude_desktop_status,
+            agents::launch_claude_desktop,
             agents::repo_local_path,
             pty::pty_spawn,
             pty::pty_write,
