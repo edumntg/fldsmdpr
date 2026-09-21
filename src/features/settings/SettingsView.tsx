@@ -17,6 +17,7 @@ import {
 import { useTheme, ACCENTS, type ThemePref, type Density } from "../../stores/theme";
 import { useSync } from "../../stores/sync";
 import { useUi, P0_WINDOW_LABELS, type P0Window } from "../../stores/ui";
+import { useProfile } from "../../stores/profile";
 import { useOnboarding } from "../onboarding/Onboarding";
 import { appInfo, kvGet, kvSet, type AppInfo } from "../../lib/ipc";
 import { PROVIDER_META } from "../connections/providerMeta";
@@ -37,14 +38,19 @@ export function SettingsView() {
   const { p0Count, setP0Count, p0Window, setP0Window } = useUi();
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [aboutMe, setAboutMe] = useState<string | null>(null);
+  const profileStore = useProfile();
   const [profile, setProfile] = useState<{ name: string; email: string; handles: string; role: string } | null>(null);
 
   useEffect(() => {
     void appInfo().then(setInfo);
     void kvGet("about_me").then((v) => setAboutMe(v ?? ""));
-    void Promise.all([kvGet("profile:name"), kvGet("profile:email"), kvGet("profile:handles"), kvGet("profile:role")]).then(
-      ([name, email, handles, role]) => setProfile({ name: name ?? "", email: email ?? "", handles: handles ?? "", role: role ?? "" }),
-    );
+    void useProfile
+      .getState()
+      .init()
+      .then(() => {
+        const { name, email, handles, role } = useProfile.getState();
+        setProfile({ name, email, handles, role });
+      });
   }, []);
 
   const densities: { id: Density; label: string; icon: typeof Rows3 }[] = [
@@ -247,9 +253,9 @@ export function SettingsView() {
 
           <Card title="About you">
             <p className="mb-3 text-xs text-ink-3">
-              Who the AI should look for. Jev uses this to tell whether an item is aimed at you (P0 picks,
-              triage); Slack and Notion rounds use it to spot messages about you or your services.
-              Everything stays local; only these lines travel with each judgment.
+              Your name, email and handles decide which Slack messages count as "about you" — a plain
+              text match, no model call. The whole profile also goes to Jev triage and the Slack/Notion
+              rounds so they know whose work they're judging.
             </p>
             <div className="flex flex-col gap-2.5">
               {(
@@ -266,7 +272,7 @@ export function SettingsView() {
                     value={profile?.[f.key] ?? ""}
                     disabled={profile === null}
                     onChange={(e) => setProfile((p) => (p ? { ...p, [f.key]: e.target.value } : p))}
-                    onBlur={() => profile && void kvSet(`profile:${f.key}`, profile[f.key])}
+                    onBlur={() => profile && void profileStore.save(f.key, profile[f.key])}
                     placeholder={f.placeholder}
                     className="h-8.5 flex-1 rounded-xl border border-line bg-surface px-3 text-[13px] text-ink outline-none transition-[border-color,box-shadow] placeholder:text-ink-3 focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
                   />
@@ -285,7 +291,7 @@ export function SettingsView() {
                 />
               </label>
             </div>
-            <p className="mt-2 text-[11px] text-ink-3">Saved when you click away. Items already judged are re-judged on the next sync.</p>
+            <p className="mt-2 text-[11px] text-ink-3">Saved when you click away. Stored locally only.</p>
           </Card>
 
           <Card title="Storage">

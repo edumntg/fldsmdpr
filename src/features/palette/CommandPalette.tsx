@@ -130,7 +130,7 @@ export function CommandPalette() {
       { id: "shortcuts", label: "Keyboard shortcuts", hint: "?", icon: Keyboard, run: () => setHelpOpen(true) },
       {
         id: "toggle-mine",
-        label: onlyMine ? "Show all items (not only mine)" : "Only items about me (Jev)",
+        label: onlyMine ? "Show all items (not only mine)" : "Only items about me",
         icon: Sparkles,
         run: toggleOnlyMine,
       },

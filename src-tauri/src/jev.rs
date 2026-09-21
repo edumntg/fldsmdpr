@@ -205,14 +205,6 @@ fn triage_questions() -> Value {
                 "fyi": "Informational only: an update, a merged/closed item, a low-severity error, nothing to do."
             }
         },
-        "involves_me": {
-            "type": "noul",
-            "instructions": "This item is about the user specifically: assigned to them, a review or answer requested from them, their name or handle mentioned, or something they own (see about_the_user).",
-            "criteria": {
-                "true": "The user is the addressee or owner: their name/handle appears, it's assigned to them, or it's about a service, repo or decision they own.",
-                "false": "Aimed at someone else or at nobody in particular; the user is at most a bystander."
-            }
-        },
         "needs_action": {
             "type": "noul",
             "instructions": "The user personally has to do something about this item (review, fix, reply, decide, attend).",
@@ -264,9 +256,7 @@ fn apply_triage(answers: &Value, content_hash: &str) -> (Value, Option<f64>) {
     let action = answers["action"]["choice"].as_str().unwrap_or("none");
     // 0–4 "attack now" score; the Today view's P0 card ranks by it.
     let attack = answers["attack_now"]["score"].as_f64().unwrap_or(0.0);
-    let involves = answers["involves_me"]["noul"].as_f64().unwrap_or(0.5);
     let mut patch = json!({
-        "jev_involves_me": format!("{involves:.2}"),
         "jev_hash": content_hash,
         "jev_urgency": urgency,
         "jev_confidence": format!("{conf:.2}"),
@@ -295,8 +285,8 @@ async fn triage(db: &AppDb, key: &str) -> Result<usize, String> {
     let pending: Vec<(Row, String)> = rows
         .into_iter()
         .filter_map(|r| {
-            // "v3": question set changed (involves_me added) → re-judge once.
-            let h = hash(&format!("{}\n{}\nv3", r.title, r.snippet));
+            // "v2": question set changed (attack_now added) → re-judge once.
+            let h = hash(&format!("{}\n{}\nv2", r.title, r.snippet));
             (r.meta["jev_hash"].as_str() != Some(h.as_str())).then_some((r, h))
         })
         .collect();

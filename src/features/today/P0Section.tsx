@@ -2,6 +2,7 @@ import { Siren, Sparkles, ArrowRight } from "lucide-react";
 import { useUi, P0_WINDOW_LABELS, type P0Window } from "../../stores/ui";
 import { useJev } from "../../stores/jev";
 import { inRange } from "../../stores/inbox";
+import { involvesMe } from "../../lib/involves";
 import type { AppNotification } from "../../lib/types";
 import { SourceBadge } from "../../components/ui/SourceBadge";
 import { Chip } from "../../components/ui/Chip";
@@ -10,9 +11,6 @@ import { cn, relativeTime } from "../../lib/utils";
 
 const attack = (n: AppNotification) => Number(n.meta?.jev_attack ?? -1);
 const needs = (n: AppNotification) => Number(n.meta?.jev_needs_action ?? 0);
-/** Jev's "is this about the user specifically" probability; -1 = not judged. */
-const involves = (n: AppNotification) => Number(n.meta?.jev_involves_me ?? -1);
-const INVOLVES_MIN = 0.5;
 
 /** Compact context line: where the item lives and who it comes from. */
 function contextOf(n: AppNotification): string[] {
@@ -30,10 +28,10 @@ function contextOf(n: AppNotification): string[] {
 }
 
 /**
- * Jev's picks for right now. Every judged item carries an "attack now" score
- * (0–4) and an "involves me" probability (see jev.rs); only items aimed at the
- * user compete, ranked by attack score, inside the chosen window. Without Jev
- * the connectors' priorities decide and the card says so.
+ * Jev's picks for right now. Only items about the user compete (deterministic,
+ * see lib/involves.ts); every judged one carries an "attack now" score (0–4,
+ * see jev.rs) that ranks them inside the chosen window. Without Jev the
+ * connectors' priorities decide and the card says so.
  */
 export function pickP0(items: AppNotification[], window: P0Window, count: number, showSentry: boolean) {
   const pool = items.filter(
@@ -42,24 +40,24 @@ export function pickP0(items: AppNotification[], window: P0Window, count: number
       n.source !== "gcal" &&
       n.type !== "agent_done" &&
       (showSentry || n.source !== "sentry") &&
+      involvesMe(n) &&
       inRange(n, window === "today" ? "today" : "7d"),
   );
   const judged = pool.filter((n) => attack(n) >= 0);
   const byJev = judged.length > 0;
   const byPriority = (a: AppNotification, b: AppNotification) => b.priority - a.priority || b.createdAt - a.createdAt;
-  // Only items Jev says are about the user compete. Unjudged items (new since
-  // the last sync) wait for their verdict rather than sneaking in.
-  const mine = judged.filter((n) => involves(n) < 0 || involves(n) >= INVOLVES_MIN);
+  // Jev-scored items rank by attack; unjudged ones (new since the last sync)
+  // wait for their verdict rather than sneaking in.
   const ranked = byJev
-    ? mine.sort((a, b) => attack(b) - attack(a) || needs(b) - needs(a) || b.priority - a.priority)
+    ? judged.sort((a, b) => attack(b) - attack(a) || needs(b) - needs(a) || b.priority - a.priority)
     : pool.sort(byPriority);
-  return { picks: ranked.slice(0, count), byJev, poolSize: pool.length, pending: pool.length - judged.length, mineCount: mine.length };
+  return { picks: ranked.slice(0, count), byJev, poolSize: pool.length, pending: pool.length - judged.length };
 }
 
 export function P0Section({ items, goTo }: { items: AppNotification[]; goTo: (n: AppNotification) => void }) {
   const { p0Count, p0Window, setP0Window, showSentry } = useUi();
   const jevOn = useJev((s) => s.connected && s.enabled);
-  const { picks, byJev, poolSize, pending, mineCount } = pickP0(items, p0Window, p0Count, showSentry);
+  const { picks, byJev, poolSize, pending } = pickP0(items, p0Window, p0Count, showSentry);
 
   return (
     <div className="animate-pop-in rounded-card border border-danger/25 bg-surface-2 p-5 shadow-card">
@@ -70,7 +68,7 @@ export function P0Section({ items, goTo }: { items: AppNotification[]; goTo: (n:
         <h3 className="text-[13px] font-semibold">P0 · Urgent</h3>
         <span className="text-xs text-ink-3">
           {byJev
-            ? `${Math.min(p0Count, mineCount)} of ${mineCount} aimed at you${pending > 0 ? ` · ${pending} awaiting judgment` : ""}`
+            ? `${Math.min(p0Count, poolSize - pending)} of ${poolSize} about you${pending > 0 ? ` · ${pending} awaiting Jev` : ""}`
             : jevOn
               ? `waiting for Jev's verdicts on ${poolSize}`
               : `top ${p0Count} of ${poolSize} by connector priority`}
@@ -94,7 +92,7 @@ export function P0Section({ items, goTo }: { items: AppNotification[]; goTo: (n:
       {picks.length === 0 ? (
         <p className="text-[13px] text-ink-3">
           {byJev
-            ? `Nothing aimed at you ${p0Window === "today" ? "today" : "this week"}. Tell Jev who you are in Settings → About you if that seems off.`
+            ? `Nothing about you ${p0Window === "today" ? "today" : "this week"}. Check Settings → About you if that seems off.`
             : `Nothing pressing ${p0Window === "today" ? "today" : "this week"}. Enjoy it.`}
         </p>
       ) : (
@@ -127,8 +125,7 @@ export function P0Section({ items, goTo }: { items: AppNotification[]; goTo: (n:
                           attack {attack(n).toFixed(1)}/4
                         </Chip>
                       )}
-                      {byJev && involves(n) >= 0 && <span>you {Math.round(involves(n) * 100)}%</span>}
-                      {urg && JEV_URGENCY_LABEL[urg] && <span>· {JEV_URGENCY_LABEL[urg]}</span>}
+                      {urg && JEV_URGENCY_LABEL[urg] && <span>{JEV_URGENCY_LABEL[urg]}</span>}
                       {byJev && attack(n) >= 0 && <span>· needs you {Math.round(needs(n) * 100)}%</span>}
                       {action && <span>· {action}</span>}
                       <span>· {relativeTime(n.createdAt)}</span>

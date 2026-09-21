@@ -17,6 +17,7 @@ import { useAiSources } from "./stores/aiSources";
 import { useTerminal } from "./stores/terminal";
 import { useJev } from "./stores/jev";
 import { useSlackAi } from "./stores/slackAi";
+import { useProfile } from "./stores/profile";
 
 // Off the cold-start path: settings, agents, ask (markdown) and the terminal
 // (xterm + WebGL) load on first use.
@@ -38,6 +39,7 @@ export default function App() {
   const maybeAutoStartOnboarding = useOnboarding((s) => s.maybeAutoStart);
   const initJev = useJev((s) => s.init);
   const initSlackAi = useSlackAi((s) => s.init);
+  const initProfile = useProfile((s) => s.init);
   const terminalMounted = useTerminal((s) => s.open || s.tabs.length > 0);
 
   useShortcuts();
@@ -52,7 +54,8 @@ export default function App() {
     void maybeAutoStartOnboarding();
     void initJev();
     void initSlackAi(); // Slack (opt-in): analyze-on-open + hourly while enabled
-  }, [initTheme, reloadInbox, initSync, refreshConnections, initAiSources, maybeAutoStartOnboarding, initJev, initSlackAi]);
+    void initProfile();
+  }, [initTheme, reloadInbox, initSync, refreshConnections, initAiSources, maybeAutoStartOnboarding, initJev, initSlackAi, initProfile]);
 
   return (
     <div className="flex h-full flex-col">
