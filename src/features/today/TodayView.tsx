@@ -5,6 +5,7 @@ import { useUi } from "../../stores/ui";
 import type { AppNotification, Source } from "../../lib/types";
 import { SourceBadge, sourceLabel } from "../../components/ui/SourceBadge";
 import { relativeTime, cn } from "../../lib/utils";
+import { UrgentCard } from "./UrgentCard";
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -88,6 +89,8 @@ export function TodayView() {
             <h2 className="text-[22px] font-semibold tracking-tight">{greeting()}</h2>
             <p className="mt-0.5 text-[13px] text-ink-3">{dateLabel}</p>
           </div>
+
+          <UrgentCard items={items} goTo={goTo} />
 
           {/* per-source counts — click to filter the list below (click again to clear) */}
           <div className="flex flex-wrap gap-2">

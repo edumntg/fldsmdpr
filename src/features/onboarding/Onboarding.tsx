@@ -6,6 +6,7 @@ import { PROVIDER_META } from "../connections/providerMeta";
 import { ConnectionCard } from "../connections/ConnectionCard";
 import { SlackConnectionCard } from "../connections/SlackConnectionCard";
 import { CalendarCard } from "../connections/CalendarCard";
+import { AiSourceCard } from "../connections/AiSourceCard";
 import { useConnections, connectedCount } from "../../stores/connections";
 import { Button } from "../../components/ui/Button";
 import { cn } from "../../lib/utils";
@@ -31,7 +32,7 @@ export const useOnboarding = create<OnboardingState>((set) => ({
   },
 }));
 
-// steps: 0 = welcome, 1..n = one per provider, n+1 = finish
+// steps: 0 = welcome, 1..n = one per provider, n+1 = AI sources (Notion + Granola), n+2 = finish
 export function Onboarding() {
   const { open, close } = useOnboarding();
   const statuses = useConnections((s) => s.statuses);
@@ -44,7 +45,8 @@ export function Onboarding() {
   if (!open) return null;
 
   const providers = PROVIDER_META;
-  const lastStep = providers.length + 1;
+  const aiStep = providers.length + 1;
+  const lastStep = aiStep + 1;
   const provider = step >= 1 && step <= providers.length ? providers[step - 1] : null;
 
   // On a provider step, Next unlocks only once the connection is verified.
@@ -68,6 +70,7 @@ export function Onboarding() {
             <h2 className="text-[14px] font-semibold tracking-tight">
               {step === 0 && "Welcome to FLDSMDPR"}
               {provider && `Connect ${provider.name}`}
+              {step === aiStep && "Notion & meetings (via Claude)"}
               {step === lastStep && "You're all set"}
             </h2>
             <p className="text-xs text-ink-3">
@@ -123,6 +126,18 @@ export function Onboarding() {
               <ConnectionCard meta={provider} defaultExpanded />
             ))}
 
+          {step === aiStep && (
+            <div className="flex flex-col gap-3">
+              <p className="text-[13px] leading-5.5 text-ink-2">
+                These two ride on the <span className="font-medium text-ink">claude</span> CLI's connectors,
+                so there's no token to paste — just make sure Notion and Granola are connected in Claude
+                (<span className="font-mono text-xs">claude mcp list</span>) and flip them on.
+              </p>
+              <AiSourceCard source="notion" />
+              <AiSourceCard source="granola" />
+            </div>
+          )}
+
           {step === lastStep && (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
               <div className="flex size-12 items-center justify-center rounded-2xl bg-success/12 text-success">
@@ -165,7 +180,7 @@ export function Onboarding() {
                 title={mustConnect ? `Connect ${provider?.name} to continue, or skip it` : undefined}
                 onClick={() => setStep((s) => s + 1)}
               >
-                {provider ? "Next" : "Get started"}
+                {step === 0 ? "Get started" : "Next"}
                 <ArrowRight size={14} />
               </Button>
             ) : (

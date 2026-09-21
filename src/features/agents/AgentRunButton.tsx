@@ -9,16 +9,17 @@ import {
   FolderGit2,
   FolderOpen,
   Check,
+  AppWindow,
 } from "lucide-react";
 import type { AppNotification } from "../../lib/types";
-import { orcaStatus, orcaRepos, kvGet, kvSet, type OrcaRepo } from "../../lib/ipc";
+import { orcaStatus, claudeDesktopStatus, orcaRepos, kvGet, kvSet, type OrcaRepo } from "../../lib/ipc";
 import { AGENT_MODELS, DEFAULT_AGENT_MODEL } from "../../lib/models";
 import { pickFolder } from "../../lib/pty";
 import { useAgents, isActive } from "../../stores/agents";
 import { AgentStatusRow } from "./AgentStatusRow";
 import { cn } from "../../lib/utils";
 
-type MenuView = "runners" | "orca-repos" | "claude-folder";
+type MenuView = "runners" | "orca-repos" | "claude-folder" | "desktop-folder";
 
 /**
  * Shared runner picker: Orca → choose one of Orca's registered repos;
@@ -43,6 +44,7 @@ function AgentRunnerMenu({
   const [model, setModel] = useState(DEFAULT_AGENT_MODEL);
   const [skipPerms, setSkipPerms] = useState(true);
   const [orcaInstalled, setOrcaInstalled] = useState(false);
+  const [desktopInstalled, setDesktopInstalled] = useState(false);
   const [repos, setRepos] = useState<OrcaRepo[] | null>(null);
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [repoError, setRepoError] = useState<string | null>(null);
@@ -51,6 +53,7 @@ function AgentRunnerMenu({
 
   useEffect(() => {
     void orcaStatus().then((s) => setOrcaInstalled(s.installed));
+    void claudeDesktopStatus().then((s) => setDesktopInstalled(s.installed));
     void kvGet("agent_model").then((m) => m && setModel(m));
     void kvGet("agent_skip_permissions").then((v) => setSkipPerms(v !== "0"));
   }, []);
@@ -85,15 +88,17 @@ function AgentRunnerMenu({
   // sibling panes.
   const rect = anchorEl.getBoundingClientRect();
   const MENU_W = 304;
-  const MENU_H = 340;
+  const MENU_H = 340; // tallest view (folder picker); only decides which way to open
   const left = Math.max(8, Math.min(rect.left, window.innerWidth - MENU_W - 8));
-  const top =
-    rect.bottom + 6 + MENU_H > window.innerHeight
-      ? Math.max(8, rect.top - MENU_H - 6)
-      : rect.bottom + 6;
+  // Anchor the edge that touches the trigger, so the menu hugs the button no
+  // matter its actual height (the runners view is far shorter than MENU_H).
+  const pos =
+    rect.bottom + 6 + MENU_H > window.innerHeight && rect.top > window.innerHeight / 2
+      ? { bottom: window.innerHeight - rect.top + 6, left }
+      : { top: rect.bottom + 6, left };
 
   useEffect(() => {
-    if ((view === "orca-repos" || view === "claude-folder") && repos === null && !loadingRepos) {
+    if (view !== "runners" && repos === null && !loadingRepos) {
       setLoadingRepos(true);
       setRepoError(null);
       orcaRepos()
@@ -121,9 +126,13 @@ function AgentRunnerMenu({
     onClose();
     void launch(n, label, "claude", { cwd, model, skipPermissions: skipPerms });
   };
+  const runDesktop = (cwd: string) => {
+    onClose();
+    void launch(n, label, "desktop", { cwd });
+  };
   const browseAndRun = async () => {
     const folder = await pickFolder();
-    if (folder) runClaude(folder);
+    if (folder) (view === "desktop-folder" ? runDesktop : runClaude)(folder);
   };
 
   const repoList = (onPick: (r: OrcaRepo) => void, subtitleOf: (r: OrcaRepo) => string) => (
@@ -160,7 +169,7 @@ function AgentRunnerMenu({
   return createPortal(
     <div
       ref={menuRef}
-      style={{ top, left }}
+      style={pos}
       className="animate-pop-in fixed z-50 w-76 overflow-hidden rounded-xl border border-line-strong bg-surface-2 p-1.5 shadow-pop"
     >
       {view === "runners" && (
@@ -180,6 +189,17 @@ function AgentRunnerMenu({
             subtitle="Pick the repo folder → runs in the terminal"
             onClick={() => setView("claude-folder")}
           />
+          <RunnerOption
+            icon={AppWindow}
+            title="Claude Desktop"
+            subtitle={
+              desktopInstalled
+                ? "Pick the repo folder → new session in the Claude app"
+                : "Claude Desktop not found in /Applications"
+            }
+            disabled={!desktopInstalled}
+            onClick={() => setView("desktop-folder")}
+          />
         </>
       )}
 
@@ -194,7 +214,11 @@ function AgentRunnerMenu({
               <ArrowLeft size={14} />
             </button>
             <span className="text-[11px] font-semibold tracking-wide text-ink-2 uppercase">
-              {view === "orca-repos" ? "Select a repo (Orca)" : "Select the repo folder (Claude)"}
+              {view === "orca-repos"
+                ? "Select a repo (Orca)"
+                : view === "desktop-folder"
+                  ? "Select the repo folder (Claude Desktop)"
+                  : "Select the repo folder (Claude)"}
             </span>
           </div>
 
@@ -227,6 +251,19 @@ function AgentRunnerMenu({
                 <span className="font-mono text-[10px] text-ink-3">--dangerously-skip-permissions</span>
               </label>
               {repoList((r) => runClaude(r.path), (r) => r.path)}
+              <button
+                onClick={() => void browseAndRun()}
+                className="mt-1 flex w-full cursor-default items-center gap-2.5 rounded-lg border-t border-line p-2 pt-2.5 text-left transition-colors hover:bg-surface-3"
+              >
+                <FolderOpen size={14} className="shrink-0 text-accent" />
+                <span className="text-[13px] font-medium text-accent">Browse for a folder…</span>
+              </button>
+            </>
+          )}
+
+          {view === "desktop-folder" && (
+            <>
+              {repoList((r) => runDesktop(r.path), (r) => r.path)}
               <button
                 onClick={() => void browseAndRun()}
                 className="mt-1 flex w-full cursor-default items-center gap-2.5 rounded-lg border-t border-line p-2 pt-2.5 text-left transition-colors hover:bg-surface-3"

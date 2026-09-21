@@ -10,6 +10,7 @@ mod providers;
 mod pty;
 mod secrets;
 mod slack;
+mod urgent;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -48,6 +49,8 @@ pub fn run() {
             inbox::snooze_notification,
             inbox::search_notifications,
             agents::orca_status,
+            agents::claude_desktop_status,
+            agents::launch_claude_desktop,
             agents::orca_repos,
             agents::agent_session_upsert,
             agents::agent_sessions_list,
@@ -68,6 +71,7 @@ pub fn run() {
             providers::linear_add_comment,
             ai_sources::granola_transcript,
             ask::ask_claude,
+            urgent::urgent_pick,
             inbox::agent_notify,
             inbox::notification_set_meta,
             slack::slack_connect,

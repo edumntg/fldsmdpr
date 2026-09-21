@@ -9,6 +9,8 @@ import { ConnectionCard } from "../connections/ConnectionCard";
 import { SlackConnectionCard } from "../connections/SlackConnectionCard";
 import { CalendarCard } from "../connections/CalendarCard";
 import { AiSourceCard } from "../connections/AiSourceCard";
+import { SyncFlow } from "./SyncFlow";
+import { UrgentSettings } from "./UrgentSettings";
 import { Button } from "../../components/ui/Button";
 import { cn, relativeTime } from "../../lib/utils";
 
@@ -83,6 +85,17 @@ export function SettingsView() {
                 </Button>
               </div>
             </div>
+          </Card>
+
+          <Card title="Urgent picks · Jev via OpenRouter">
+            <UrgentSettings />
+          </Card>
+
+          <Card title="Data flow">
+            <p className="mb-3 text-xs text-ink-3">
+              Every source feeds the same inbox. Click a source to refresh just that one.
+            </p>
+            <SyncFlow />
           </Card>
 
           <div>

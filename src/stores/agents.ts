@@ -1,18 +1,19 @@
 import { create } from "zustand";
 import type { AppNotification } from "../lib/types";
-import { launchOrca, agentSessionUpsert, agentNotify, kvGet } from "../lib/ipc";
+import { launchOrca, launchClaudeDesktop, agentSessionUpsert, agentNotify, kvGet } from "../lib/ipc";
 import { DEFAULT_AGENT_MODEL } from "../lib/models";
 import { useInbox } from "./inbox";
 import { repoLocalPath } from "../lib/pty";
 import { useTerminal } from "./terminal";
 import { buildAgentPrompt, worktreeName } from "../features/agents/prompt";
 
+export type AgentRunner = "orca" | "claude" | "desktop";
 export type AgentStatus = "starting" | "working" | "thinking" | "waiting" | "done" | "failed";
 
 export interface AgentRun {
   id: string; // session id (persisted)
   notificationId: string;
-  runner: "orca" | "claude";
+  runner: AgentRunner;
   status: AgentStatus;
   label: string; // the action, e.g. "Review with agent"
   title: string; // what it's working on
@@ -48,7 +49,7 @@ interface AgentsState {
   launch: (
     n: AppNotification,
     label: string,
-    runner: "orca" | "claude",
+    runner: AgentRunner,
     opts?: {
       repoId?: string;
       repoName?: string;
@@ -143,6 +144,22 @@ export const useAgents = create<AgentsState>((set, get) => ({
         "working",
         cwd ? `Built-in terminal · ${cwd.split("/").pop()}` : "Built-in terminal (repo not found locally)",
       );
+      return;
+    }
+
+    if (runner === "desktop") {
+      const folder = opts?.cwd ?? (repo ? await repoLocalPath(repo) : null);
+      if (!folder) {
+        get().setStatus(n.id, "failed", "Pick the repo folder first");
+        return;
+      }
+      try {
+        await launchClaudeDesktop({ folder, prompt: buildAgentPrompt(n, label, opts?.extra) });
+        // Same as Orca: the session lives elsewhere, nothing to track here.
+        get().setStatus(n.id, "done", `Launched in Claude Desktop · ${folder.split("/").pop()}`);
+      } catch (e) {
+        get().setStatus(n.id, "failed", e instanceof Error ? e.message : String(e));
+      }
       return;
     }
 

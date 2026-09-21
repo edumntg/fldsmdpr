@@ -298,3 +298,9 @@ body {
 .animate-fade-in {
   animation: fade-in 120ms ease-out;
 }
+
+@keyframes dash {
+  to {
+    stroke-dashoffset: -8;
+  }
+}

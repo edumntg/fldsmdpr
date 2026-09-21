@@ -30,6 +30,45 @@ pub fn orca_status() -> OrcaStatus {
     }
 }
 
+#[derive(Serialize)]
+pub struct ClaudeDesktopStatus {
+    pub installed: bool,
+}
+
+#[tauri::command]
+pub fn claude_desktop_status() -> ClaudeDesktopStatus {
+    ClaudeDesktopStatus {
+        installed: std::path::Path::new("/Applications/Claude.app").exists(),
+    }
+}
+
+/// Starts a Claude Code session in Claude Desktop via its deep link
+/// (`claude://code/new?folder=…&q=…`, prompt capped by the app at ~14k chars).
+/// Fire-and-forget: Desktop owns the session from here on.
+#[tauri::command]
+pub fn launch_claude_desktop(folder: String, prompt: String) -> Result<(), String> {
+    let url = url::Url::parse_with_params(
+        "claude://code/new",
+        [
+            ("folder", folder.as_str()),
+            ("q", prompt.as_str()),
+            ("source", "fldsmdpr"),
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    let out = Command::new("open")
+        .arg(url.as_str())
+        .output()
+        .map_err(|e| format!("Failed to open Claude Desktop: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "Claude Desktop refused the link: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
 fn run_orca_json(bin: &PathBuf, args: &[&str]) -> Result<serde_json::Value, String> {
     let out = Command::new(bin)
         .args(args)

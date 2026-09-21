@@ -16,6 +16,35 @@ export async function kvGet(key: string): Promise<string | null> {
   return invoke<string | null>("kv_get", { key });
 }
 
+export async function secretGet(key: string): Promise<string | null> {
+  if (!inTauri) return localStorage.getItem(`secret:${key}`);
+  return invoke<string | null>("secret_get", { key });
+}
+
+export async function secretSet(key: string, value: string): Promise<void> {
+  if (!inTauri) {
+    localStorage.setItem(`secret:${key}`, value);
+    return;
+  }
+  return invoke("secret_set", { key, value });
+}
+
+// ---- urgent / P0 (Jev via OpenRouter) ----
+
+export type UrgentWindow = "day" | "week";
+export interface UrgentResult {
+  picks: { id: string; reason: string }[];
+  at: number;
+  window: UrgentWindow;
+  model: string;
+  considered: number;
+}
+
+export async function urgentPick(window: UrgentWindow, force = false): Promise<UrgentResult> {
+  if (!inTauri) return { picks: [], at: Date.now(), window, model: "preview", considered: 0 };
+  return invoke<UrgentResult>("urgent_pick", { window, force });
+}
+
 export async function kvSet(key: string, value: string): Promise<void> {
   if (!inTauri) {
     localStorage.setItem(`kv:${key}`, value);
@@ -81,9 +110,10 @@ export interface SyncResult {
   errors: string[];
 }
 
-export async function runSync(): Promise<SyncResult> {
+/** `only` restricts the round to one source id (github | slack | linear | sentry | gcal). */
+export async function runSync(only?: string): Promise<SyncResult> {
   if (!inTauri) return { synced_at: Date.now(), providers: [], new_count: 0, errors: [] };
-  return invoke<SyncResult>("run_sync");
+  return invoke<SyncResult>("run_sync", { only: only ?? null });
 }
 
 // ---- slack (session-token auth, no app) ----
@@ -494,6 +524,16 @@ export async function maccalSetConfig(enabled: boolean, calendars: string[]): Pr
 export async function orcaStatus(): Promise<{ installed: boolean }> {
   if (!inTauri) return { installed: true }; // browser preview pretends it's there
   return invoke<{ installed: boolean }>("orca_status");
+}
+
+export async function claudeDesktopStatus(): Promise<{ installed: boolean }> {
+  if (!inTauri) return { installed: true };
+  return invoke<{ installed: boolean }>("claude_desktop_status");
+}
+
+export async function launchClaudeDesktop(args: { folder: string; prompt: string }): Promise<void> {
+  if (!inTauri) return;
+  return invoke("launch_claude_desktop", args);
 }
 
 export interface OrcaRepo {

@@ -75,11 +75,9 @@ pub async fn ai_source_sync(
         // Incremental: only look at activity after the last successful round
         // (30 min overlap), unless that round is older than the source's full
         // window — then re-read the whole window.
-        let full_window_ms: i64 = if source == "granola" {
-            48 * 3_600_000
-        } else {
-            7 * 86_400_000
-        };
+        // Both sources look back a week: a 48h meeting window came up empty
+        // every Monday.
+        let full_window_ms: i64 = 7 * 86_400_000;
         let since = kv(&conn, &format!("{source}:ai_last_sync"))
             .and_then(|s| s.parse::<i64>().ok())
             .filter(|t| now - t < full_window_ms)

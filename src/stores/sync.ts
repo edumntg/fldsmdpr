@@ -5,10 +5,12 @@ import { useInbox } from "./inbox";
 interface SyncState {
   lastSyncAt: number | null;
   syncing: boolean;
+  /** Source id when the running round is a single-source refresh. */
+  syncingSource: string | null;
   lastError: string | null;
   /** Daily auto-refresh time, "HH:MM" 24h. Applies while the app stays open. */
   refreshTime: string;
-  sync: () => Promise<void>;
+  sync: (only?: string) => Promise<void>;
   setRefreshTime: (t: string) => void;
   /** Refresh on open + arm the daily scheduler. Called once on app mount. */
   init: () => Promise<void>;
@@ -20,20 +22,21 @@ let schedulerArmed = false;
 export const useSync = create<SyncState>((set, get) => ({
   lastSyncAt: null,
   syncing: false,
+  syncingSource: null,
   lastError: null,
   refreshTime: DEFAULT_REFRESH_TIME,
 
-  sync: async () => {
+  sync: async (only) => {
     if (get().syncing) return;
-    set({ syncing: true, lastError: null });
+    set({ syncing: true, syncingSource: only ?? null, lastError: null });
     try {
-      const result = await runSync();
+      const result = await runSync(only);
       set({ lastSyncAt: result.synced_at, lastError: result.errors[0] ?? null });
       await useInbox.getState().reload();
     } catch (e) {
       set({ lastError: e instanceof Error ? e.message : String(e) });
     } finally {
-      set({ syncing: false });
+      set({ syncing: false, syncingSource: null });
     }
   },
 

@@ -284,7 +284,16 @@ pub async fn github_pr_detail(
 }
 
 #[tauri::command]
-pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<SyncResult, String> {
+pub async fn run_sync(
+    app: tauri::AppHandle,
+    db: State<'_, AppDb>,
+    only: Option<String>,
+) -> Result<SyncResult, String> {
+    // `only` narrows the round to one source (Settings flow diagram click).
+    let want = |p: &str| match only.as_deref() {
+        Some(o) => o == p,
+        None => true,
+    };
     let mut synced: Vec<String> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
     let mut fetched: Vec<crate::connectors::Fetched> = Vec::new();
@@ -296,7 +305,11 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
     // different id schemes that would wipe each other.
     let mut resolve_sources: Vec<&'static str> = Vec::new();
 
-    if let Ok(Some(token)) = crate::secrets::get(&token_key("github")) {
+    if let Some(token) = crate::secrets::get(&token_key("github"))
+        .ok()
+        .flatten()
+        .filter(|_| want("github"))
+    {
         match crate::connectors::github::fetch(&token).await {
             Ok((items, complete)) => {
                 fetched.extend(items);
@@ -308,7 +321,11 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
             Err(e) => errors.push(format!("github: {e}")),
         }
     }
-    if let Ok(Some(token)) = crate::secrets::get(&token_key("linear")) {
+    if let Some(token) = crate::secrets::get(&token_key("linear"))
+        .ok()
+        .flatten()
+        .filter(|_| want("linear"))
+    {
         match crate::connectors::linear::fetch(&token).await {
             Ok(items) => {
                 fetched.extend(items);
@@ -318,7 +335,11 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
             Err(e) => errors.push(format!("linear: {e}")),
         }
     }
-    if let Ok(Some(token)) = crate::secrets::get(&token_key("sentry")) {
+    if let Some(token) = crate::secrets::get(&token_key("sentry"))
+        .ok()
+        .flatten()
+        .filter(|_| want("sentry"))
+    {
         match crate::connectors::sentry::fetch(&token).await {
             Ok((items, complete)) => {
                 fetched.extend(items);
@@ -330,7 +351,11 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
             Err(e) => errors.push(format!("sentry: {e}")),
         }
     }
-    if let Ok(Some(auth)) = crate::slack::load_auth() {
+    if let Some(auth) = crate::slack::load_auth()
+        .ok()
+        .flatten()
+        .filter(|_| want("slack"))
+    {
         // Read opted-in channels under a short lock so the guard is dropped
         // before we await the network fetch.
         let channels: Vec<(String, String)> = {
@@ -356,7 +381,11 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
     // succeeded, otherwise one backend's transient failure clears the other's events.
     let mut gcal_enabled = false;
     let mut gcal_all_ok = true;
-    if let Ok(Some(url)) = crate::secrets::get(&token_key("gcal")) {
+    if let Some(url) = crate::secrets::get(&token_key("gcal"))
+        .ok()
+        .flatten()
+        .filter(|_| want("gcal"))
+    {
         gcal_enabled = true;
         match crate::connectors::gcal::fetch(&url).await {
             Ok(items) => fetched.extend(items),
@@ -374,7 +403,7 @@ pub async fn run_sync(app: tauri::AppHandle, db: State<'_, AppDb>) -> Result<Syn
                 crate::calendar::selected_calendars(&conn),
             )
         };
-        if enabled {
+        if enabled && want("gcal") {
             gcal_enabled = true;
             match crate::connectors::maccal::fetch(&cals) {
                 Ok(items) => fetched.extend(items),

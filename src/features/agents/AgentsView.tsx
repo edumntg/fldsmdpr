@@ -165,7 +165,7 @@ function WorkCard({ r }: { r: WorkRow }) {
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <Chip>
             {r.runner === "orca" ? <Bot size={10} /> : <TerminalSquare size={10} />}
-            {r.runner === "orca" ? "Orca" : "Claude"}
+            {r.runner === "orca" ? "Orca" : r.runner === "desktop" ? "Claude Desktop" : "Claude"}
           </Chip>
           <span className="text-[11px] text-ink-3">{r.label}</span>
           {r.detail && <span className="truncate text-[11px] text-ink-3">· {r.detail}</span>}
