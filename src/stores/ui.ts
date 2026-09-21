@@ -3,6 +3,8 @@ import type { SectionId } from "../lib/types";
 
 export type SortBy = "priority" | "newest";
 export type Range = "all" | "today" | "3d" | "7d";
+export type P0Window = "today" | "week";
+export const P0_WINDOW_LABELS: Record<P0Window, string> = { today: "Today", week: "This week" };
 export const RANGE_LABELS: Record<Range, string> = { all: "All time", today: "Today", "3d": "3 days", "7d": "Week" };
 
 interface UiState {
@@ -26,6 +28,11 @@ interface UiState {
   /** Sentry errors stay out of Inbox/Today unless toggled on (the Errors section always shows them). */
   showSentry: boolean;
   toggleSentry: () => void;
+  /** Today → "P0 · Urgent": how many picks (3–5) and over which window. */
+  p0Count: number;
+  setP0Count: (n: number) => void;
+  p0Window: P0Window;
+  setP0Window: (w: P0Window) => void;
 }
 
 const SECTIONS: SectionId[] = [
@@ -76,6 +83,17 @@ export const useUi = create<UiState>((set) => ({
       localStorage.setItem("ui:showSentry", s.showSentry ? "0" : "1");
       return { showSentry: !s.showSentry };
     }),
+  p0Count: Math.min(5, Math.max(3, Number(localStorage.getItem("ui:p0Count")) || 3)),
+  setP0Count: (n) => {
+    const p0Count = Math.min(5, Math.max(3, n));
+    localStorage.setItem("ui:p0Count", String(p0Count));
+    set({ p0Count });
+  },
+  p0Window: (localStorage.getItem("ui:p0Window") as P0Window | null) ?? "today",
+  setP0Window: (p0Window) => {
+    localStorage.setItem("ui:p0Window", p0Window);
+    set({ p0Window });
+  },
 }));
 
 /** Sidebar order (Slack only when its master switch is on). */

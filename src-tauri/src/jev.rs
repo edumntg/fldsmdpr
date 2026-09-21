@@ -187,6 +187,17 @@ fn triage_questions() -> Value {
                 "false": "Nothing is required from the user; it is an update or someone else's work."
             }
         },
+        "attack_now": {
+            "type": "score",
+            "instructions": "How strongly should the user stop what they are doing and handle this item right now?",
+            "criteria": [
+                "Can wait days, or needs nothing from the user.",
+                "Should be handled this week.",
+                "Should be handled today.",
+                "Should be handled within the hour.",
+                "Drop everything: production is down or people are blocked on the user."
+            ]
+        },
         "action": {
             "type": "choice",
             "instructions": "If a coding agent were started from this item, what should it do?",
@@ -217,12 +228,15 @@ fn apply_triage(answers: &Value, content_hash: &str) -> (Value, Option<f64>) {
     let conf = answers["urgency"]["confidence"].as_f64().unwrap_or(0.0);
     let needs = answers["needs_action"]["noul"].as_f64().unwrap_or(0.5);
     let action = answers["action"]["choice"].as_str().unwrap_or("none");
+    // 0–4 "attack now" score; the Today view's P0 card ranks by it.
+    let attack = answers["attack_now"]["score"].as_f64().unwrap_or(0.0);
     let mut patch = json!({
         "jev_hash": content_hash,
         "jev_urgency": urgency,
         "jev_confidence": format!("{conf:.2}"),
         "jev_needs_action": format!("{needs:.2}"),
         "jev_action": action,
+        "jev_attack": format!("{attack:.2}"),
     });
     let priority = if conf >= MIN_CONFIDENCE && !urgency.is_empty() {
         // Urgency sets the band; "needs my action" nudges within it (±8).
@@ -248,7 +262,8 @@ async fn triage(db: &AppDb, key: &str) -> Result<usize, String> {
     let pending: Vec<(Row, String)> = rows
         .into_iter()
         .filter_map(|r| {
-            let h = hash(&format!("{}\n{}", r.title, r.snippet));
+            // "v2": question set changed (attack_now added) → re-judge once.
+            let h = hash(&format!("{}\n{}\nv2", r.title, r.snippet));
             (r.meta["jev_hash"].as_str() != Some(h.as_str())).then_some((r, h))
         })
         .collect();

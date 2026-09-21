@@ -1,6 +1,7 @@
 import { Calendar, ExternalLink, Flame, ArrowRight, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { IconButton } from "../../components/ui/IconButton";
 import { JEV_URGENCY_LABEL } from "../../lib/actions";
+import { P0Section } from "./P0Section";
 import { useState } from "react";
 import { useInbox } from "../../stores/inbox";
 import { useUi } from "../../stores/ui";
@@ -97,6 +98,8 @@ export function TodayView() {
             <h2 className="text-[22px] font-semibold tracking-tight">{greeting()}</h2>
             <p className="mt-0.5 text-[13px] text-ink-3">{dateLabel}</p>
           </div>
+
+          <P0Section items={items} goTo={goTo} />
 
           {/* per-source counts — click to filter the list below (click again to clear) */}
           <div className="flex flex-wrap gap-2">
