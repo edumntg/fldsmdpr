@@ -19,7 +19,7 @@ export const mockNotifications: AppNotification[] = [
     state: "unread",
     meta: {
       repo: "core-api", number: "#482", ci: "passing", author: "mchen-dev",
-      jev_hash: "preview", jev_urgency: "today", jev_confidence: "0.79", jev_needs_action: "0.88", jev_action: "review_code", jev_priority: "86",
+      jev_hash: "preview", jev_urgency: "today", jev_confidence: "0.79", jev_needs_action: "0.88", jev_action: "review_code", jev_attack: "2.40", jev_priority: "86",
     },
   },
   {
@@ -42,6 +42,7 @@ export const mockNotifications: AppNotification[] = [
       jev_confidence: "0.86",
       jev_needs_action: "0.91",
       jev_action: "fix_bug",
+      jev_attack: "3.70",
       jev_priority: "97",
       jev_related: JSON.stringify([{ id: "n3", title: "PLA-355: Add jittered backoff to webhook worker", p: "0.81" }]),
     },

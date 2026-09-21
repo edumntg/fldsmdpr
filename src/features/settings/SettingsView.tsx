@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { useTheme, ACCENTS, type ThemePref, type Density } from "../../stores/theme";
 import { useSync } from "../../stores/sync";
-import { useUi } from "../../stores/ui";
+import { useUi, P0_WINDOW_LABELS, type P0Window } from "../../stores/ui";
 import { useOnboarding } from "../onboarding/Onboarding";
 import { appInfo, kvGet, kvSet, type AppInfo } from "../../lib/ipc";
 import { PROVIDER_META } from "../connections/providerMeta";
@@ -34,6 +34,7 @@ export function SettingsView() {
   const { refreshTime, setRefreshTime, lastSyncAt, sync, syncing } = useSync();
   const startOnboarding = useOnboarding((s) => s.start);
   const setHelpOpen = useUi((s) => s.setHelpOpen);
+  const { p0Count, setP0Count, p0Window, setP0Window } = useUi();
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [aboutMe, setAboutMe] = useState<string | null>(null);
 
@@ -139,6 +140,46 @@ export function SettingsView() {
                 <Keyboard size={13} />
                 Show all
               </Button>
+            </Row>
+          </Card>
+
+          <Card title="Today · P0 picks">
+            <p className="text-xs text-ink-3">
+              The card at the top of Today. With AI triage connected, Jev scores every item on how
+              urgently it should be attacked (0–4) and the top picks win; otherwise the connectors'
+              priorities decide.
+            </p>
+            <Row label="How many" hint="3 to 5 items.">
+              <div className="flex gap-1.5">
+                {[3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setP0Count(n)}
+                    className={cn(
+                      "press flex size-8 cursor-default items-center justify-center rounded-xl border text-xs font-semibold tabular-nums",
+                      p0Count === n ? "border-accent bg-accent-soft text-accent" : "border-line bg-surface-2 text-ink-2 hover:border-line-strong",
+                    )}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </Row>
+            <Row label="Window" hint="Which items compete for the top spots.">
+              <div className="flex gap-1.5">
+                {(Object.keys(P0_WINDOW_LABELS) as P0Window[]).map((w) => (
+                  <button
+                    key={w}
+                    onClick={() => setP0Window(w)}
+                    className={cn(
+                      "press flex h-8 cursor-default items-center rounded-xl border px-2.5 text-xs font-medium",
+                      p0Window === w ? "border-accent bg-accent-soft text-accent" : "border-line bg-surface-2 text-ink-2 hover:border-line-strong",
+                    )}
+                  >
+                    {P0_WINDOW_LABELS[w]}
+                  </button>
+                ))}
+              </div>
             </Row>
           </Card>
 
