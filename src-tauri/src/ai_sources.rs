@@ -33,6 +33,14 @@ pub struct AiSourceStatus {
     pub last_error: Option<String>,
 }
 
+/// How far back a full Granola round looks (Settings; default 48 h, clamped 6 h–30 d).
+pub fn granola_window_hours(conn: &rusqlite::Connection) -> i64 {
+    kv(conn, "granola:window_hours")
+        .and_then(|s| s.parse::<i64>().ok())
+        .map(|h| h.clamp(6, 24 * 30))
+        .unwrap_or(48)
+}
+
 #[tauri::command]
 pub fn ai_source_status(db: State<AppDb>, source: String) -> Result<AiSourceStatus, String> {
     valid_source(&source)?;
@@ -66,7 +74,7 @@ pub async fn ai_source_sync(
     source: String,
 ) -> Result<usize, String> {
     valid_source(&source)?;
-    let (enabled, about_me, since) = {
+    let (enabled, about_me, since, granola_hours) = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -75,8 +83,9 @@ pub async fn ai_source_sync(
         // Incremental: only look at activity after the last successful round
         // (30 min overlap), unless that round is older than the source's full
         // window — then re-read the whole window.
+        let granola_hours = granola_window_hours(&conn);
         let full_window_ms: i64 = if source == "granola" {
-            48 * 3_600_000
+            granola_hours * 3_600_000
         } else {
             7 * 86_400_000
         };
@@ -88,6 +97,7 @@ pub async fn ai_source_sync(
             kv(&conn, &format!("{source}:ai_enabled")).as_deref() == Some("1"),
             kv(&conn, "about_me").unwrap_or_default(),
             since,
+            granola_hours,
         )
     };
     if !enabled {
@@ -97,7 +107,7 @@ pub async fn ai_source_sync(
     let src = source.clone();
     let result = tauri::async_runtime::spawn_blocking(move || match src.as_str() {
         "notion" => crate::connectors::ai_rounds::notion_round(&about_me, since),
-        _ => crate::connectors::ai_rounds::granola_round(since),
+        _ => crate::connectors::ai_rounds::granola_round(since, granola_hours),
     })
     .await
     .map_err(|e| e.to_string())?;

@@ -120,9 +120,14 @@ pub fn notion_round(about_me: &str, since_ms: Option<i64>) -> Result<Vec<Fetched
 }
 
 /// Granola: action items from my meetings — incremental after `since_ms`,
-/// else the last 48 hours.
-pub fn granola_round(since_ms: Option<i64>) -> Result<Vec<Fetched>, String> {
-    let window = window_clause(since_ms, "ONLY my meetings from the LAST 48 HOURS");
+/// else the last `window_hours` (Settings → Granola; default 48).
+pub fn granola_round(since_ms: Option<i64>, window_hours: i64) -> Result<Vec<Fetched>, String> {
+    let full = if window_hours % 24 == 0 && window_hours >= 48 {
+        format!("ONLY my meetings from the LAST {} DAYS", window_hours / 24)
+    } else {
+        format!("ONLY my meetings from the LAST {window_hours} HOURS")
+    };
+    let window = window_clause(since_ms, &full);
     let prompt = format!(
         "Using the Granola tools, look at {window}.\n\
         Extract action items that are mine: commitments I made, questions directed at me, and decisions that require my action.\n\

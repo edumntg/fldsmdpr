@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Sparkles, Loader2, RefreshCw } from "lucide-react";
 import { useAiSources, type AiSource } from "../../stores/aiSources";
+import { kvGet, kvSet } from "../../lib/ipc";
 import { SourceBadge } from "../../components/ui/SourceBadge";
 import { relativeTime, cn } from "../../lib/utils";
 
@@ -22,14 +23,34 @@ const COPY: Record<AiSource, { name: string; blurb: string }> = {
  * a toggle instead of a token, since claude already holds
  * the connection.
  */
+const GRANOLA_WINDOWS = [
+  { hours: 24, label: "Last 24 hours" },
+  { hours: 48, label: "Last 48 hours" },
+  { hours: 72, label: "Last 3 days" },
+  { hours: 168, label: "Last 7 days" },
+  { hours: 336, label: "Last 14 days" },
+];
+
 export function AiSourceCard({ source }: { source: AiSource }) {
   const { sources, loaded, init, sync, setEnabled } = useAiSources();
   const st = sources[source];
   const { name, blurb } = COPY[source];
+  const [windowHours, setWindowHours] = useState(48);
 
   useEffect(() => {
     if (!loaded) void init();
   }, [loaded, init]);
+  useEffect(() => {
+    if (source === "granola") void kvGet("granola:window_hours").then((v) => v && setWindowHours(Number(v)));
+  }, [source]);
+
+  const changeWindow = async (hours: number) => {
+    setWindowHours(hours);
+    await kvSet("granola:window_hours", String(hours));
+    // A wider window has meetings the incremental cursor would skip — start fresh.
+    await kvSet("granola:ai_last_sync", "");
+    if (st.enabled) void sync(source);
+  };
 
   return (
     <div className="rounded-card border border-line bg-surface-2 p-4 shadow-card">
@@ -57,6 +78,26 @@ export function AiSourceCard({ source }: { source: AiSource }) {
       </div>
 
       <p className="mt-2 text-[13px] leading-5 text-ink-2">{blurb}</p>
+
+      {source === "granola" && (
+        <label className="mt-2.5 flex items-center justify-between gap-3 text-[13px]">
+          <span>
+            <span className="font-medium">Meetings to review</span>
+            <span className="block text-xs text-ink-3">How far back each full analysis looks.</span>
+          </span>
+          <select
+            value={windowHours}
+            onChange={(e) => void changeWindow(Number(e.target.value))}
+            className="h-8 rounded-lg border border-line bg-surface-2 px-2 text-xs outline-none focus:border-accent"
+          >
+            {GRANOLA_WINDOWS.map((w) => (
+              <option key={w.hours} value={w.hours}>
+                {w.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {!st.available && (
         <p className="mt-2 rounded-lg bg-warning/10 px-2.5 py-1.5 text-xs text-ink-2">
