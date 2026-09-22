@@ -76,7 +76,7 @@ Requires Rust (stable), Node 20+, and pnpm.
 
 ### Packaging & distribution
 
-Releases are cut by pushing a tag: `git tag v0.2.0 && git push --tags`. The `Release` workflow builds a universal macOS `.dmg`, a Windows NSIS installer, the signed updater artifacts and `latest.json`, and publishes them as a GitHub Release — installed apps pick it up on next launch. The updater private key lives in the `TAURI_SIGNING_PRIVATE_KEY` repo secret (local copy: `~/.tauri/fldsmdpr.key`; a local `pnpm tauri build` needs `TAURI_SIGNING_PRIVATE_KEY_PATH` pointing at it). Losing that key means shipped apps can never update again — back it up.
+Releases are cut by pushing a tag: `git tag v0.2.0 && git push --tags`. The `Release` workflow builds a universal macOS `.dmg`, a Windows NSIS installer, the signed updater artifacts and `latest.json`, and publishes them as a GitHub Release — installed apps pick it up on next launch. The updater private key lives in the `TAURI_SIGNING_PRIVATE_KEY` repo secret (local copy: `~/.tauri/fldsmdpr.key`; a local `pnpm tauri build` needs `TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/fldsmdpr.key)"` in the environment). Losing that key means shipped apps can never update again — back it up.
 
 `pnpm tauri build` produces a real installable bundle:
 - **macOS:** `src-tauri/target/release/bundle/dmg/FLDSMDPR_<ver>_<arch>.dmg`. The build is **ad-hoc signed** (`signingIdentity: "-"`), which gives the binary a stable identity — so a macOS Keychain "Always Allow" sticks and the secrets prompt stops recurring (unlike `tauri dev`, where each rebuild is a new binary).
