@@ -3,7 +3,7 @@ name: Release
 # Builds installable bundles (.dmg / .exe) + signed updater artifacts and
 # publishes a GitHub Release on tag push. The app checks
 # releases/latest/download/latest.json on launch (see src/lib/updater.ts).
-# Apple signing/notarization activate automatically when those secrets exist.
+# Apple signing/notarization: see the commented env block below.
 on:
   push:
     tags: ["v*"]
@@ -46,13 +46,15 @@ jobs:
           # Updater artifact signing (minisign) — required
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS signing + notarization (optional — set as repo secrets)
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # macOS Developer ID signing + notarization: once the org provides a
+          # certificate, add these secrets AND uncomment — an empty
+          # APPLE_CERTIFICATE makes Tauri try to import a blank cert and fail.
+          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           args: --target ${{ matrix.target }}
           tagName: ${{ github.ref_name }}
