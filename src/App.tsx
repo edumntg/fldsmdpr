@@ -18,6 +18,7 @@ import { useTerminal } from "./stores/terminal";
 import { useJev } from "./stores/jev";
 import { useSlackAi } from "./stores/slackAi";
 import { useProfile } from "./stores/profile";
+import { checkForUpdate } from "./lib/updater";
 
 // Off the cold-start path: settings, agents, ask (markdown) and the terminal
 // (xterm + WebGL) load on first use.
@@ -55,6 +56,7 @@ export default function App() {
     void initJev();
     void initSlackAi(); // Slack (opt-in): analyze-on-open + hourly while enabled
     void initProfile();
+    void checkForUpdate(); // silent download, toast to restart
   }, [initTheme, reloadInbox, initSync, refreshConnections, initAiSources, maybeAutoStartOnboarding, initJev, initSlackAi, initProfile]);
 
   return (

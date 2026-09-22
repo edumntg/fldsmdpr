@@ -48,6 +48,22 @@ FLDSMDPR is a **fast, lightweight, local-first desktop app** (macOS & Windows) t
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design details.
 
+## Install
+
+**macOS** — paste in Terminal (installs or updates, opens the app):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/edumntg/fldsmdpr/main/install.sh | sh
+```
+
+Or grab the `.dmg` from the [latest release](https://github.com/edumntg/fldsmdpr/releases/latest), drag it to Applications, open it once and click **Open Anyway** in System Settings → Privacy & Security (the build isn't Apple-notarized).
+
+**Windows** — download and run `FLDSMDPR_<ver>_x64-setup.exe` from the [latest release](https://github.com/edumntg/fldsmdpr/releases/latest).
+
+Installed copies check for updates on launch, download them silently and offer a one-click restart.
+
+**Before first use** you need the [`claude` CLI](https://docs.anthropic.com/claude-code) installed and logged in (agents, Notion/Granola/Slack sources run through it). Optional: [Orca](https://orca.dev) as agent runner. The in-app setup guide walks through GitHub, Linear, Sentry and Calendar tokens.
+
 ## Development
 
 ```bash
@@ -59,6 +75,8 @@ pnpm tauri build   # production bundle (DMG / MSI)
 Requires Rust (stable), Node 20+, and pnpm.
 
 ### Packaging & distribution
+
+Releases are cut by pushing a tag: `git tag v0.2.0 && git push --tags`. The `Release` workflow builds a universal macOS `.dmg`, a Windows NSIS installer, the signed updater artifacts and `latest.json`, and publishes them as a GitHub Release — installed apps pick it up on next launch. The updater private key lives in the `TAURI_SIGNING_PRIVATE_KEY` repo secret (local copy: `~/.tauri/fldsmdpr.key`; a local `pnpm tauri build` needs `TAURI_SIGNING_PRIVATE_KEY_PATH` pointing at it). Losing that key means shipped apps can never update again — back it up.
 
 `pnpm tauri build` produces a real installable bundle:
 - **macOS:** `src-tauri/target/release/bundle/dmg/FLDSMDPR_<ver>_<arch>.dmg`. The build is **ad-hoc signed** (`signingIdentity: "-"`), which gives the binary a stable identity — so a macOS Keychain "Always Allow" sticks and the secrets prompt stops recurring (unlike `tauri dev`, where each rebuild is a new binary).

@@ -57,6 +57,15 @@
       "nsis": {
         "installMode": "currentUser"
       }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYzMkFGMkJBQzQ5MUM0MkIKUldRcnhKSEV1dklxOCt3K3pLT3dWWGRvR2RnNllma01CM0dwZkU5am1BOC95REF5blJHS3RBRnIK",
+      "endpoints": [
+        "https://github.com/edumntg/fldsmdpr/releases/latest/download/latest.json"
+      ]
     }
   }
 }
