@@ -1,7 +1,9 @@
 name: Release
 
-# Builds installable bundles (.dmg / .msi) on tag push. Signing/notarization
-# activate automatically when the corresponding secrets are present.
+# Builds installable bundles (.dmg / .exe) + signed updater artifacts and
+# publishes a GitHub Release on tag push. The app checks
+# releases/latest/download/latest.json on launch (see src/lib/updater.ts).
+# Apple signing/notarization activate automatically when those secrets exist.
 on:
   push:
     tags: ["v*"]
@@ -14,12 +16,14 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            target: aarch64-apple-darwin
-          - os: macos-latest
-            target: x86_64-apple-darwin
+            target: universal-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            rust_targets: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -31,13 +35,17 @@ jobs:
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.rust_targets }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
       - run: pnpm install --frozen-lockfile
       - uses: tauri-apps/tauri-action@v0
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updater artifact signing (minisign) — required
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # macOS signing + notarization (optional — set as repo secrets)
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -49,4 +57,10 @@ jobs:
           args: --target ${{ matrix.target }}
           tagName: ${{ github.ref_name }}
           releaseName: FLDSMDPR ${{ github.ref_name }}
-          releaseDraft: true
+          releaseBody: |
+            **macOS:** run `curl -fsSL https://raw.githubusercontent.com/edumntg/fldsmdpr/main/install.sh | sh` — or download the `.dmg`, drag to Applications, then allow it in System Settings → Privacy & Security.
+            **Windows:** download and run the `-setup.exe`.
+            Installed copies update themselves on launch.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
