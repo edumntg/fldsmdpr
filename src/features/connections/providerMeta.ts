@@ -9,6 +9,8 @@ export interface ProviderMeta {
   createUrlLabel: string;
   /** Step-by-step setup instructions shown in Connections & onboarding. */
   steps: string[];
+  /** Plain-language consent gate, shown before a sign-in that grants access. */
+  consent?: { will: string[]; wont: string[]; undo: string };
   scopes: string[];
   available: boolean;
   unavailableNote?: string;
@@ -36,18 +38,31 @@ export const PROVIDER_META: ProviderMeta[] = [
   {
     id: "slack",
     name: "Slack",
-    tokenLabel: "Session token (no app needed)",
+    tokenLabel: "Sign in to Slack (no app needed)",
     placeholder: "",
-    createUrl: "https://app.slack.com",
-    createUrlLabel: "Open Slack in your browser",
+    createUrl: "https://slack.com/intl/en-gb/help/articles/214613947-Sign-out-of-Slack",
+    createUrlLabel: "How to sign out of Slack sessions",
     steps: [
-      "Your org blocks creating Slack apps, so FLDSMDPR uses your existing browser session instead — no app, no admin approval.",
-      "Open Slack in a browser (app.slack.com) and sign in. Open DevTools (⌥⌘I on Mac) → Console tab.",
-      "Get your token: paste this and copy the xoxc-… result → Object.values(JSON.parse(localStorage.localConfig_v2).teams)[0].token",
-      "Get your cookie: DevTools → Application → Cookies → app.slack.com → copy the value of the “d” cookie (starts with xoxd-).",
-      "Paste both below and press Connect, then pick which channels FLDSMDPR should watch.",
+      "Your org blocks creating Slack apps, so FLDSMDPR signs in as you instead — no app, no admin approval.",
+      "Press “Sign in to Slack”. A FLDSMDPR window opens on the normal Slack login page.",
+      "Log in the way you always do — SSO, password, magic link. FLDSMDPR never sees your password.",
+      "The window closes by itself once you are in. Then pick which channels FLDSMDPR should watch.",
     ],
-    scopes: ["Read-only, session-scoped (same access your Slack already has)"],
+    /** Shown as an explicit consent gate before the sign-in window opens. */
+    consent: {
+      will: [
+        "Read messages in the channels you pick below, plus your direct messages.",
+        "Store them in a SQLite file on this Mac, and your Slack session in the macOS keychain.",
+        "Act read-only: it never posts, replies, reacts, or changes anything in Slack.",
+      ],
+      wont: [
+        "It never sees your password — you type that into Slack's own login page.",
+        "Nothing is uploaded anywhere. Claude summaries stay off until you switch them on.",
+        "It reads nothing from the Slack desktop app or from your browsers.",
+      ],
+      undo: "Press Disconnect here to wipe the session from your keychain. To kill it on Slack's side too, sign out of all sessions from your Slack account page.",
+    },
+    scopes: ["Read-only, session-scoped (the same access your own Slack login has)"],
     available: true,
   },
   {

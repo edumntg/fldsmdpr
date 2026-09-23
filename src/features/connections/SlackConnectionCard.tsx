@@ -9,11 +9,15 @@ import {
   RefreshCw,
   Plus,
   X,
+  Eye,
+  ShieldCheck,
+  LogIn,
 } from "lucide-react";
 import { providerMeta } from "./providerMeta";
 import { useConnections } from "../../stores/connections";
 import {
   slackConnect,
+  slackSignIn,
   slackListChannels,
   slackResolveChannel,
   slackGetChannels,
@@ -49,6 +53,23 @@ export function SlackConnectionCard({ defaultExpanded = false }: { defaultExpand
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showToken, setShowToken] = useState(!connected);
+  /** "consent" = gate shown, "signing" = Slack window open and being polled. */
+  const [phase, setPhase] = useState<"idle" | "consent" | "signing">("idle");
+  const [manual, setManual] = useState(false);
+
+  const onSignIn = async () => {
+    setPhase("signing");
+    setError(null);
+    try {
+      await slackSignIn();
+      await refresh();
+      if (!slackEnabled) await setSlackEnabled(true); // connecting implies "on"
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPhase("idle");
+    }
+  };
 
   const onConnect = async () => {
     setBusy(true);
@@ -138,58 +159,125 @@ export function SlackConnectionCard({ defaultExpanded = false }: { defaultExpand
                         i < meta.steps.length - 1 && "pb-3.5",
                       )}
                     >
-                      {s.includes("Object.values(") ? (
-                        <>
-                          Get your token: open the Console and copy the{" "}
-                          <code className="rounded bg-surface-3 px-1 py-0.5 font-mono text-[11px] select-text">
-                            xoxc-…
-                          </code>{" "}
-                          result of:
-                          <code className="mt-1 block rounded-lg bg-surface-3 p-2 font-mono text-[11px] break-all select-text">
-                            Object.values(JSON.parse(localStorage.localConfig_v2).teams)[0].token
-                          </code>
-                        </>
-                      ) : (
-                        s
-                      )}
+                      {s}
                     </p>
                   </li>
                 ))}
               </ol>
 
-              <button
-                onClick={() => void openExternal(meta.createUrl)}
-                className="mt-3 inline-flex cursor-default items-center gap-1.5 text-[13px] font-medium text-accent hover:underline"
-              >
-                <ExternalLink size={13} />
-                {meta.createUrlLabel}
-              </button>
+              {phase === "consent" ? (
+                <div className="mt-4 rounded-xl border border-accent/25 bg-accent-soft/40 p-3.5">
+                  <h5 className="text-[13px] font-semibold">Before you sign in</h5>
+                  <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+                    Signing in gives FLDSMDPR the same read access to Slack that you already have.
+                    Here is exactly what that means, so you can decide.
+                  </p>
 
-              <div className="mt-4 flex flex-col gap-2">
-                <input
-                  type="password"
-                  value={xoxc}
-                  onChange={(e) => setXoxc(e.target.value)}
-                  placeholder="xoxc-… (token)"
-                  className="h-8.5 rounded-xl border border-line bg-surface px-3 font-mono text-xs text-ink outline-none placeholder:text-ink-3 focus:border-accent"
-                />
-                <input
-                  type="password"
-                  value={xoxd}
-                  onChange={(e) => setXoxd(e.target.value)}
-                  placeholder="xoxd-… (d cookie)"
-                  className="h-8.5 rounded-xl border border-line bg-surface px-3 font-mono text-xs text-ink outline-none placeholder:text-ink-3 focus:border-accent"
-                />
-                <Button
-                  variant="primary"
-                  disabled={!xoxc || busy}
-                  onClick={() => void onConnect()}
-                  className="self-start"
-                >
-                  {busy ? <Loader2 size={14} className="animate-spin" /> : null}
-                  Connect
-                </Button>
-              </div>
+                  <p className="mt-3 text-[11px] font-semibold tracking-wide text-ink-2 uppercase">
+                    What FLDSMDPR will do
+                  </p>
+                  <ul className="mt-1.5 flex flex-col gap-1">
+                    {meta.consent?.will.map((c) => (
+                      <li key={c} className="flex gap-2 text-[12.5px] leading-5 text-ink-2">
+                        <Eye size={13} className="mt-1 shrink-0 text-accent" />
+                        <span className="min-w-0 flex-1">{c}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <p className="mt-3 text-[11px] font-semibold tracking-wide text-ink-2 uppercase">
+                    What it will never do
+                  </p>
+                  <ul className="mt-1.5 flex flex-col gap-1">
+                    {meta.consent?.wont.map((c) => (
+                      <li key={c} className="flex gap-2 text-[12.5px] leading-5 text-ink-2">
+                        <ShieldCheck size={13} className="mt-1 shrink-0 text-success" />
+                        <span className="min-w-0 flex-1">{c}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <p className="mt-3 text-[12px] leading-5 text-ink-3">{meta.consent?.undo}</p>
+                  <button
+                    onClick={() => void openExternal(meta.createUrl)}
+                    className="mt-1.5 inline-flex cursor-default items-center gap-1.5 text-[12px] font-medium text-accent hover:underline"
+                  >
+                    <ExternalLink size={12} />
+                    {meta.createUrlLabel}
+                  </button>
+
+                  <div className="mt-3.5 flex items-center gap-2">
+                    <Button variant="primary" onClick={() => void onSignIn()}>
+                      <LogIn size={14} />
+                      I understand — open Slack sign-in
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setPhase("idle")}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : phase === "signing" ? (
+                <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-line bg-surface p-3.5">
+                  <Loader2 size={15} className="mt-0.5 shrink-0 animate-spin text-accent" />
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium">Waiting for you to finish signing in…</p>
+                    <p className="mt-0.5 text-[12.5px] leading-5 text-ink-3">
+                      Log in in the Slack window that just opened. It closes on its own once you are
+                      through. Close it yourself to cancel.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 flex flex-col items-start gap-2.5">
+                  <Button variant="primary" onClick={() => setPhase("consent")}>
+                    <LogIn size={14} />
+                    Sign in to Slack
+                  </Button>
+                  <button
+                    onClick={() => setManual((m) => !m)}
+                    className="cursor-default text-[12px] font-medium text-ink-3 hover:text-ink"
+                  >
+                    {manual ? "Hide manual token entry" : "Paste tokens manually instead"}
+                  </button>
+                  {manual && (
+                    <div className="flex w-full flex-col gap-2 rounded-xl border border-line bg-surface p-3">
+                      <p className="text-[12px] leading-5 text-ink-3">
+                        Fallback for if the sign-in window fails. In Slack’s DevTools console, type{" "}
+                        <code className="rounded bg-surface-3 px-1 py-0.5 font-mono text-[11px] select-text">
+                          allow pasting
+                        </code>{" "}
+                        and press Enter first — Chrome blocks pasting into the console until you do.
+                      </p>
+                      <code className="block rounded-lg bg-surface-3 p-2 font-mono text-[11px] break-all select-text">
+                        Object.values(JSON.parse(localStorage.localConfig_v2).teams)[0].token
+                      </code>
+                      <input
+                        type="password"
+                        value={xoxc}
+                        onChange={(e) => setXoxc(e.target.value)}
+                        placeholder="xoxc-… (token)"
+                        className="h-8.5 rounded-xl border border-line bg-surface px-3 font-mono text-xs text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+                      />
+                      <input
+                        type="password"
+                        value={xoxd}
+                        onChange={(e) => setXoxd(e.target.value)}
+                        placeholder="xoxd-… (d cookie)"
+                        className="h-8.5 rounded-xl border border-line bg-surface px-3 font-mono text-xs text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+                      />
+                      <Button
+                        variant="primary"
+                        disabled={!xoxc || busy}
+                        onClick={() => void onConnect()}
+                        className="self-start"
+                      >
+                        {busy ? <Loader2 size={14} className="animate-spin" /> : null}
+                        Connect
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           ) : (
             <ChannelPicker />
@@ -199,14 +287,32 @@ export function SlackConnectionCard({ defaultExpanded = false }: { defaultExpand
 
           <div className={cn("flex items-center", connected ? "mt-4" : "mt-3")}>
             {connected && (
-              <Button variant="danger" size="sm" onClick={() => void disconnect("slack")}>
-                <Unplug size={13} />
-                Disconnect
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="danger" size="sm" onClick={() => void disconnect("slack")}>
+                  <Unplug size={13} />
+                  Disconnect
+                </Button>
+                {/* "Connected" only means a session is stored, not that it still
+                    works — so rotation needs a re-auth that isn't Disconnect first. */}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={phase === "signing"}
+                  onClick={() => void onSignIn()}
+                >
+                  {phase === "signing" ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <LogIn size={13} />
+                  )}
+                  {phase === "signing" ? "Signing in…" : "Sign in again"}
+                </Button>
+              </div>
             )}
             <p className="ml-auto max-w-80 text-right text-[11px] text-ink-3">
-              Session tokens are read-only and stored only in your OS keychain. The xoxc token rotates
-              periodically — re-paste it if Slack sync starts failing. DMs are included automatically.
+              Your session is read-only and stored only in your OS keychain. Slack rotates it
+              periodically — press Sign in to Slack again if sync starts failing. DMs are included
+              automatically.
             </p>
           </div>
             </div>

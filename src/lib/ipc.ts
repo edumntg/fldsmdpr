@@ -102,6 +102,19 @@ export async function slackConnect(xoxc: string, xoxd: string): Promise<string> 
   return invoke<string>("slack_connect", { xoxc, xoxd });
 }
 
+/**
+ * Guided sign-in. Opens Slack in a FLDSMDPR-owned window so the user logs in
+ * themselves, then reuses that window's session — no DevTools, no copy-paste.
+ * Resolves with the connected account, rejects if cancelled or timed out.
+ */
+export async function slackSignIn(): Promise<string> {
+  if (!inTauri) {
+    localStorage.setItem("mock-conn:slack", "preview-account");
+    return "preview-account";
+  }
+  return invoke<string>("slack_sign_in");
+}
+
 export async function slackListChannels(): Promise<SlackChannel[]> {
   if (!inTauri)
     return [
