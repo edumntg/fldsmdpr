@@ -1,11 +1,14 @@
-//! "Ask" section: free-form questions to claude with the app's data as
-//! context (recent notifications, agent runs, sync state). Pure Q&A over the
-//! local DB — no MCP tools, so rounds are fast (~10-30 s on Sonnet).
+//! "Ask" section: free-form questions with the app's data as context (recent
+//! notifications, agent runs, sync state). One OpenRouter chat call on a fast
+//! Gemini Flash, reusing the OpenRouter key from Jev — no `claude` CLI spawn.
 
-use crate::claude_cli::{result_envelope, run_claude_to_files};
 use crate::AppDb;
 use serde::Deserialize;
+use serde_json::{json, Value};
 use tauri::State;
+
+const URL: &str = "https://openrouter.ai/api/v1/chat/completions";
+const MODEL: &str = "google/gemini-3.8-flash";
 
 #[derive(Deserialize)]
 pub struct ChatTurn {
@@ -135,74 +138,67 @@ fn build_context(conn: &rusqlite::Connection) -> Result<String, String> {
     ))
 }
 
-fn build_prompt(context: &str, history: &[ChatTurn], question: &str) -> String {
+fn build_messages(context: &str, history: &[ChatTurn], question: &str) -> Vec<Value> {
     let now = chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-    let mut convo = String::new();
-    for t in history.iter().rev().take(8).rev() {
-        let role = if t.role == "assistant" { "You" } else { "User" };
-        convo.push_str(&format!(
-            "{role}: {}\n",
-            t.content.chars().take(1500).collect::<String>()
-        ));
-    }
-    format!(
+    let system = format!(
         "You are the assistant inside FLDSMDPR, the user's personal developer dispatcher app. \
-         Below is the app's current data. Answer the user's question using ONLY this data — do not use any tools, do not browse, do not run commands. \
+         Below is the app's current data. Answer the user's question using ONLY this data. \
          Answer in the language the user asks in, in concise markdown (bullet lists where natural, reference items by their title and source, mention times as relative when helpful). \
          If the data can't answer the question, say what's missing.\n\n\
          Current local time: {now}\n\n\
-         ===== APP DATA =====\n{context}\n===== END APP DATA =====\n\n\
-         {}{}Question: {question}",
-        if convo.is_empty() { "" } else { "Previous conversation:\n" },
-        convo
-    )
+         ===== APP DATA =====\n{context}\n===== END APP DATA ====="
+    );
+    let mut messages = vec![json!({ "role": "system", "content": system })];
+    for t in history.iter().rev().take(8).rev() {
+        let role = if t.role == "assistant" {
+            "assistant"
+        } else {
+            "user"
+        };
+        let content: String = t.content.chars().take(1500).collect();
+        messages.push(json!({ "role": role, "content": content }));
+    }
+    messages.push(json!({ "role": "user", "content": question }));
+    messages
 }
 
 #[tauri::command]
-pub async fn ask_claude(
+pub async fn ask_ai(
     db: State<'_, AppDb>,
     question: String,
     history: Vec<ChatTurn>,
 ) -> Result<String, String> {
+    let key = crate::secrets::get(crate::jev::KEY)
+        .map_err(|e| e.to_string())?
+        .ok_or("No OpenRouter API key. Add one in Settings → Intelligence.")?;
     let context = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         build_context(&conn)?
     };
-    let prompt = build_prompt(&context, &history, &question);
 
-    tauri::async_runtime::spawn_blocking(move || {
-        let (raw, stderr, success) = run_claude_to_files(
-            &[
-                "-p",
-                &prompt,
-                "--output-format",
-                "json",
-                // No tools: pure summarization over the provided context.
-                "--allowedTools",
-                "",
-                "--model",
-                "claude-sonnet-5",
-            ],
-            180,
-        )?;
-        if raw.trim().is_empty() {
-            let head: String = stderr.chars().take(300).collect();
-            return Err(if head.trim().is_empty() {
-                format!("claude produced no output (exit success={success}).")
-            } else {
-                format!("claude failed: {}", head.trim())
-            });
-        }
-        let envelope =
-            result_envelope(&raw).ok_or("Unexpected claude output (no result envelope).")?;
-        if envelope["is_error"].as_bool() == Some(true) {
-            return Err(envelope["result"]
-                .as_str()
-                .unwrap_or("claude reported an error")
-                .to_string());
-        }
-        Ok(envelope["result"].as_str().unwrap_or("").to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    let res = reqwest::Client::builder()
+        .user_agent("fldsmdpr/0.1")
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| e.to_string())?
+        .post(URL)
+        .bearer_auth(&key)
+        .header("HTTP-Referer", "https://github.com/edumntg/fldsmdpr")
+        .header("X-Title", "FLDSMDPR")
+        .json(&json!({ "model": MODEL, "messages": build_messages(&context, &history, &question) }))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {e}"))?;
+    let status = res.status();
+    let body: Value = res.json().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        let msg = body["error"]["message"]
+            .as_str()
+            .unwrap_or("request rejected");
+        return Err(format!("OpenRouter {status}: {msg}"));
+    }
+    body["choices"][0]["message"]["content"]
+        .as_str()
+        .map(String::from)
+        .ok_or_else(|| "OpenRouter returned no answer".to_string())
 }

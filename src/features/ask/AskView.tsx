@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, Send, Loader2, Trash2 } from "lucide-react";
+import { Sparkles, Send, Loader2, Trash2, KeyRound } from "lucide-react";
 import { useAsk } from "../../stores/ask";
+import { useUi } from "../../stores/ui";
+import { jevStatus } from "../../lib/ipc";
 import { Markdown } from "../../components/ui/Markdown";
 import { IconButton } from "../../components/ui/IconButton";
 import { cn } from "../../lib/utils";
@@ -12,13 +14,20 @@ const SUGGESTIONS = [
   "What did the agents finish this week?",
 ];
 
-/** Chat with claude over everything the app knows: notifications, tickets,
+/** Chat with Gemini (via OpenRouter) over everything the app knows: notifications, tickets,
  * agent runs, sync state. Answers come from the local DB — no live fetching. */
 export function AskView() {
   const { messages, running, error, send, clear, prefill, setPrefill } = useAsk();
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const setSection = useUi((s) => s.setSection);
+  // Ask runs on the OpenRouter key shared with Jev; null = still checking.
+  const [hasKey, setHasKey] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    jevStatus().then((s) => setHasKey(s.connected), () => setHasKey(false));
+  }, []);
 
   // "Ask about this" lands here with a question pre-typed, ready to edit or send.
   useEffect(() => {
@@ -34,7 +43,7 @@ export function AskView() {
   }, [messages.length, running]);
 
   const submit = () => {
-    if (!draft.trim() || running) return;
+    if (!draft.trim() || running || !hasKey) return;
     void send(draft);
     setDraft("");
   };
@@ -55,14 +64,33 @@ export function AskView() {
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 pt-1">
         <div className="mx-auto flex max-w-2xl flex-col gap-3 pb-4">
-          {messages.length === 0 && (
+          {hasKey === false && (
+            <div className="mt-16 flex flex-col items-center gap-4">
+              <span className="flex size-11 items-center justify-center rounded-2xl bg-surface-3 text-ink-3">
+                <KeyRound size={20} />
+              </span>
+              <p className="text-[14px] font-medium">OpenRouter API key needed</p>
+              <p className="max-w-sm text-center text-[13px] text-ink-3">
+                Ask runs on Gemini through OpenRouter. Add your OpenRouter API key in Settings →
+                Intelligence to start asking.
+              </p>
+              <button
+                onClick={() => setSection("settings")}
+                className="cursor-default rounded-pill bg-accent px-3.5 py-1.5 text-xs text-accent-fg hover:bg-accent-hover"
+              >
+                Open Settings
+              </button>
+            </div>
+          )}
+
+          {hasKey && messages.length === 0 && (
             <div className="mt-16 flex flex-col items-center gap-4">
               <span className="flex size-11 items-center justify-center rounded-2xl bg-src-agent/12 text-src-agent">
                 <Sparkles size={20} />
               </span>
               <p className="text-[14px] font-medium">Ask anything about your work</p>
               <p className="max-w-sm text-center text-[13px] text-ink-3">
-                Claude answers from what's already in the app — notifications, PRs, tickets, errors,
+                Answers come from what's already in the app — notifications, PRs, tickets, errors,
                 meetings and agent runs.
               </p>
               <div className="mt-1 flex flex-wrap justify-center gap-2">
@@ -117,11 +145,12 @@ export function AskView() {
             }}
             placeholder="e.g. “Summarize the last 3 hours”  ·  Enter to send"
             rows={2}
+            disabled={!hasKey}
             className="max-h-40 flex-1 resize-none rounded-xl border border-line bg-surface-2 px-3.5 py-2.5 text-[13.5px] leading-5.5 outline-none placeholder:text-ink-3 focus:border-accent"
           />
           <button
             onClick={submit}
-            disabled={running || !draft.trim()}
+            disabled={running || !draft.trim() || !hasKey}
             className={cn(
               "flex size-10 shrink-0 cursor-default items-center justify-center rounded-xl transition-colors",
               running || !draft.trim() ? "bg-surface-3 text-ink-3" : "bg-accent text-accent-fg hover:bg-accent-hover",

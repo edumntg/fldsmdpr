@@ -92,7 +92,7 @@ pub fn run() {
             providers::linear_update_issue,
             providers::linear_add_comment,
             ai_sources::granola_transcript,
-            ask::ask_claude,
+            ask::ask_ai,
             inbox::agent_notify,
             inbox::notification_set_meta,
             ai_sources::ai_source_status,
