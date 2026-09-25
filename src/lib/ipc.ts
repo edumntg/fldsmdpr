@@ -423,12 +423,12 @@ export interface ChatTurn {
   content: string;
 }
 
-export async function askClaude(question: string, history: ChatTurn[]): Promise<string> {
+export async function askAi(question: string, history: ChatTurn[]): Promise<string> {
   if (!inTauri) {
     await new Promise((r) => setTimeout(r, 700));
     return "**In the last 3 hours:** 2 new PR reviews on `core-api`, 1 urgent Slack task (payout webhook 500s), and the agent run for PLA-341 finished.";
   }
-  return invoke<string>("ask_claude", { question, history });
+  return invoke<string>("ask_ai", { question, history });
 }
 
 // ---- agent completion notifications & meta links ----

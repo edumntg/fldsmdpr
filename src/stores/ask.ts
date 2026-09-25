@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { askClaude, type ChatTurn } from "../lib/ipc";
+import { askAi, type ChatTurn } from "../lib/ipc";
 
 interface AskState {
   messages: ChatTurn[];
@@ -12,7 +12,7 @@ interface AskState {
   clear: () => void;
 }
 
-/** Chat with claude over the app's own data (session-scoped history). */
+/** Chat with the AI over the app's own data (session-scoped history). */
 export const useAsk = create<AskState>((set, get) => ({
   messages: [],
   running: false,
@@ -26,7 +26,7 @@ export const useAsk = create<AskState>((set, get) => ({
     const history = get().messages;
     set({ messages: [...history, { role: "user", content: q }], running: true, error: null });
     try {
-      const answer = await askClaude(q, history);
+      const answer = await askAi(q, history);
       set((s) => ({ messages: [...s.messages, { role: "assistant", content: answer }] }));
     } catch (e) {
       set({ error: e instanceof Error ? e.message : String(e) });
