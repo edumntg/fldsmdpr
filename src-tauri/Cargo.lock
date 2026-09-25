@@ -1106,7 +1106,7 @@ dependencies = [
 
 [[package]]
 name = "fldsmdpr"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "base64 0.22.1",
  "chrono",
