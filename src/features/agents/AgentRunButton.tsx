@@ -83,17 +83,20 @@ function AgentRunnerMenu({
     };
   }, [anchorEl, onClose]);
 
-  // Fixed position clamped to the viewport (flips upward near the bottom) —
-  // portaling avoids being clipped by scroll containers or painted behind
-  // sibling panes.
+  // Fixed position clamped to the viewport — portaling avoids being clipped by
+  // scroll containers or painted behind sibling panes. Near the bottom it flips
+  // upward, anchored by its *bottom* edge so it hugs the trigger whatever the
+  // view's actual height; maxHeight keeps taller views on-screen.
   const rect = anchorEl.getBoundingClientRect();
   const MENU_W = 304;
   const MENU_H = 340;
   const left = Math.max(8, Math.min(rect.left, window.innerWidth - MENU_W - 8));
-  const top =
-    rect.bottom + 6 + MENU_H > window.innerHeight
-      ? Math.max(8, rect.top - MENU_H - 6)
-      : rect.bottom + 6;
+  const spaceBelow = window.innerHeight - rect.bottom - 14;
+  const spaceAbove = rect.top - 14;
+  const pos =
+    spaceBelow < MENU_H && spaceAbove > spaceBelow
+      ? { bottom: window.innerHeight - rect.top + 6, left, maxHeight: spaceAbove }
+      : { top: rect.bottom + 6, left, maxHeight: spaceBelow };
 
   useEffect(() => {
     if (view !== "runners" && repos === null && !loadingRepos) {
@@ -167,8 +170,8 @@ function AgentRunnerMenu({
   return createPortal(
     <div
       ref={menuRef}
-      style={{ top, left }}
-      className="animate-pop-in fixed z-50 w-76 overflow-hidden rounded-xl border border-line-strong bg-surface-2 p-1.5 shadow-pop"
+      style={pos}
+      className="animate-pop-in fixed z-50 w-76 overflow-y-auto rounded-xl border border-line-strong bg-surface-2 p-1.5 shadow-pop"
     >
       {view === "runners" && (
         <>

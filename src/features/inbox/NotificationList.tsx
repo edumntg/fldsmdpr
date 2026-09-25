@@ -677,14 +677,16 @@ export function CardContextMenu({ menu, onClose }: { menu: MenuState; onClose: (
     { icon: CircleDot, label: "Mark done", run: () => markDone(n) },
   ];
 
-  // Keep the menu on-screen.
-  const top = Math.min(y, window.innerHeight - items.length * 32 - 24);
+  // Keep the menu on-screen: near the bottom, open upward from the cursor
+  // (anchored by its bottom edge, like a native context menu).
+  const estH = items.length * 32 + 8;
   const left = Math.min(x, window.innerWidth - 240);
+  const pos = y + estH > window.innerHeight ? { bottom: window.innerHeight - y, left } : { top: y, left };
 
   return (
     <div
       ref={ref}
-      style={{ top, left }}
+      style={pos}
       className="animate-pop-in fixed z-50 w-56 overflow-hidden rounded-xl border border-line-strong bg-surface-2 p-1 shadow-pop"
     >
       {snoozeOpen

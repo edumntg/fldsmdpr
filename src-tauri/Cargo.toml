@@ -1,6 +1,6 @@
 [package]
 name = "fldsmdpr"
-version = "0.3.1"
+version = "0.3.2"
 description = "Fully Local Dispatcher for Sentry, Meetings, Dev-tasks, & Pull-Requests"
 authors = ["Eduardo Montilva"]
 edition = "2021"
