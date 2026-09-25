@@ -44,7 +44,11 @@ pub fn provider_status(db: State<AppDb>) -> Result<Vec<ProviderStatus>, String> 
         .map(|p| {
             let connected = crate::secrets::get(&token_key(p))
                 .map_err(|e| e.to_string())?
-                .is_some();
+                .is_some()
+                // Calendar can also be backed by the local macOS Calendar (no token).
+                || (*p == "gcal"
+                    && crate::calendar::is_enabled(&conn)
+                    && !crate::calendar::selected_calendars(&conn).is_empty());
             Ok(ProviderStatus {
                 id: p.to_string(),
                 connected,

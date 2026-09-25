@@ -11,6 +11,7 @@ import {
 import { Chip } from "../../components/ui/Chip";
 import { SourceBadge } from "../../components/ui/SourceBadge";
 import { cn } from "../../lib/utils";
+import { useConnections } from "../../stores/connections";
 
 const meta = providerMeta("gcal")!;
 
@@ -38,6 +39,7 @@ export function CalendarCard({ defaultExpanded = false }: { defaultExpanded?: bo
   const persist = async (enabled: boolean, calendars: string[]) => {
     await maccalSetConfig(enabled, calendars);
     setCfg((c) => (c ? { ...c, enabled, calendars } : c));
+    void useConnections.getState().refresh();
   };
 
   const loadCalendars = async () => {
