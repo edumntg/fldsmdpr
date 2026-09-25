@@ -1,4 +1,5 @@
-import { Siren, Sparkles, ArrowRight } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Siren, Sparkles, Clock, Check } from "lucide-react";
 import { useUi, P0_WINDOW_LABELS, type P0Window } from "../../stores/ui";
 import { useJev } from "../../stores/jev";
 import { inRange } from "../../stores/inbox";
@@ -6,7 +7,8 @@ import { involvesMe } from "../../lib/involves";
 import type { AppNotification } from "../../lib/types";
 import { SourceBadge } from "../../components/ui/SourceBadge";
 import { Chip } from "../../components/ui/Chip";
-import { JEV_URGENCY_LABEL, defaultAction } from "../../lib/actions";
+import { IconButton } from "../../components/ui/IconButton";
+import { JEV_URGENCY_LABEL, SNOOZE_OPTIONS, defaultAction, markDone, snooze } from "../../lib/actions";
 import { cn, relativeTime } from "../../lib/utils";
 
 const attack = (n: AppNotification) => Number(n.meta?.jev_attack ?? -1);
@@ -102,7 +104,7 @@ export function P0Section({ items, goTo }: { items: AppNotification[]; goTo: (n:
             const urg = n.meta?.jev_urgency;
             return (
               <li key={n.id} className={cn(i > 0 && "border-t border-line")}>
-                <button onClick={() => goTo(n)} className="group flex w-full cursor-default items-start gap-3 py-2.5 text-left">
+                <div role="button" onClick={() => goTo(n)} className="group flex w-full cursor-default items-start gap-3 py-2.5 text-left">
                   <span
                     className={cn(
                       "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold tabular-nums",
@@ -131,12 +133,51 @@ export function P0Section({ items, goTo }: { items: AppNotification[]; goTo: (n:
                       <span>· {relativeTime(n.createdAt)}</span>
                     </span>
                   </span>
-                  <ArrowRight size={13} className="mt-1.5 shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100" />
-                </button>
+                  <RowActions n={n} />
+                </div>
               </li>
             );
           })}
         </ol>
+      )}
+    </div>
+  );
+}
+
+/** Snooze / Done without opening the item. Always visible so it's one click away. */
+export function RowActions({ n }: { n: AppNotification }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+  return (
+    <div ref={ref} className="relative flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+      <IconButton label="Snooze" onClick={() => setOpen((o) => !o)} className={cn(open && "bg-surface-3 text-ink")}>
+        <Clock size={14} />
+      </IconButton>
+      <IconButton label="Mark done" onClick={() => markDone(n)}>
+        <Check size={14} />
+      </IconButton>
+      {open && (
+        <div className="animate-pop-in absolute top-full right-0 z-50 mt-1 w-40 rounded-xl border border-line-strong bg-surface-2 p-1 shadow-pop">
+          {SNOOZE_OPTIONS.map((o) => (
+            <button
+              key={o.label}
+              onClick={() => {
+                setOpen(false);
+                void snooze(n, o.until(), o.label);
+              }}
+              className="flex w-full cursor-default items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-ink-2 hover:bg-surface-3"
+            >
+              <Clock size={13} className="shrink-0 text-ink-3" />
+              {o.label}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
