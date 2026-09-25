@@ -63,7 +63,7 @@ import {
 } from "../../lib/actions";
 import { RANGE_LABELS, type Range } from "../../stores/ui";
 
-interface MenuState {
+export interface MenuState {
   n: AppNotification;
   x: number;
   y: number;
@@ -560,7 +560,7 @@ function GroupByControl({
   );
 }
 
-function NotificationCard({
+export function NotificationCard({
   n,
   index,
   selected,
@@ -640,7 +640,7 @@ type MenuItem =
   | { icon: typeof Bot; label: string; run: () => void; disabled?: boolean; danger?: boolean }
   | { separator: true };
 
-function CardContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }) {
+export function CardContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }) {
   const { n, x, y } = menu;
   const launch = useAgents((s) => s.launch);
   const ref = useRef<HTMLDivElement>(null);

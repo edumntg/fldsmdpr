@@ -1,7 +1,7 @@
-import { Calendar, ExternalLink, Flame, ArrowRight, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
+import { Calendar, ExternalLink, Flame, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { IconButton } from "../../components/ui/IconButton";
 import { JEV_URGENCY_LABEL } from "../../lib/actions";
-import { P0Section } from "./P0Section";
+import { P0Section, RowActions } from "./P0Section";
 import { useState } from "react";
 import { useInbox } from "../../stores/inbox";
 import { useUi } from "../../stores/ui";
@@ -175,8 +175,9 @@ export function TodayView() {
             ) : (
               <div className="flex flex-col">
                 {actionables.map((n, i) => (
-                  <button
+                  <div
                     key={n.id}
+                    role="button"
                     onClick={() => goTo(n)}
                     className={cn(
                       "group flex cursor-default items-center gap-3 py-2 text-left",
@@ -204,11 +205,8 @@ export function TodayView() {
                       <span className="block truncate text-xs text-ink-3">{n.snippet}</span>
                     </span>
                     <span className="shrink-0 text-xs text-ink-3">{relativeTime(n.createdAt)}</span>
-                    <ArrowRight
-                      size={13}
-                      className="shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100"
-                    />
-                  </button>
+                    <RowActions n={n} />
+                  </div>
                 ))}
                 {pageCount > 1 && (
                   <div className="flex items-center justify-between border-t border-line pt-2.5">

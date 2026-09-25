@@ -144,7 +144,10 @@ fn build_messages(context: &str, history: &[ChatTurn], question: &str) -> Vec<Va
         "You are the assistant inside FLDSMDPR, the user's personal developer dispatcher app. \
          Below is the app's current data. Answer the user's question using ONLY this data. \
          Answer in the language the user asks in, in concise markdown (bullet lists where natural, reference items by their title and source, mention times as relative when helpful). \
-         If the data can't answer the question, say what's missing.\n\n\
+         If the data can't answer the question, say what's missing.\n\
+         When you point to specific notifications (tickets, PRs, issues, errors, messages, meetings), \
+         reference each one as [[<id>]] alone on its own line, using the exact `id` from the data — the app renders those lines as item cards \
+         with title, source and status, so don't repeat the title next to the marker; add at most a short comment line before or after.\n\n\
          Current local time: {now}\n\n\
          ===== APP DATA =====\n{context}\n===== END APP DATA ====="
     );
